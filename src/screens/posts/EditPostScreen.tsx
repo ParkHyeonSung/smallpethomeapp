@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -13,17 +14,43 @@ import {
   View,
 } from 'react-native';
 
-import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
-import { createPost } from '@/src/lib/posts';
+import { getPostById, updatePost } from '@/src/lib/posts';
 import { uploadPostImage } from '@/src/lib/storage';
 
-export default function UploadScreen() {
+export default function EditPostScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [content, setContent] = useState('');
   const [isPublic, setIsPublic] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    const loadPost = async () => {
+      try {
+        setIsLoading(true);
+        const post = await getPostById(id);
+        setContent(post.content);
+        setIsPublic(post.is_public);
+        setCurrentImageUrl(post.image_url);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : '게시글을 불러오는 중 오류가 발생했습니다.';
+        Alert.alert('불러오기 실패', message, [{ text: '확인', onPress: () => router.back() }]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadPost();
+  }, [id]);
 
   const handlePickImage = async () => {
     try {
@@ -42,23 +69,25 @@ export default function UploadScreen() {
         base64: true,
       });
 
-      if (result.canceled) {
-        return;
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0] ?? null);
       }
-
-      setSelectedImage(result.assets[0] ?? null);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '이미지를 선택하는 중 오류가 발생했습니다.';
+        error instanceof Error ? error.message : '이미지 선택 중 오류가 발생했습니다.';
       Alert.alert('이미지 선택 실패', message);
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSave = async () => {
+    if (!id) {
+      return;
+    }
+
     try {
       setIsSubmitting(true);
 
-      let imageUrl: string | null = null;
+      let imageUrl = currentImageUrl;
       let imagePath: string | null = null;
 
       if (selectedImage) {
@@ -67,54 +96,61 @@ export default function UploadScreen() {
         imagePath = uploaded.imagePath;
       }
 
-      await createPost({
+      await updatePost({
+        postId: id,
         content,
         imageUrl,
         imagePath,
         isPublic,
       });
 
-      setContent('');
-      setIsPublic(true);
-      setSelectedImage(null);
-      Alert.alert('업로드 완료', '게시글과 이미지가 저장되었습니다.');
-      router.replace('/(tabs)');
+      Alert.alert('수정 완료', '게시글이 수정되었습니다.', [
+        { text: '확인', onPress: () => router.replace(`/posts/${id}`) },
+      ]);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '게시글 업로드 중 오류가 발생했습니다.';
-      Alert.alert('업로드 실패', message);
+        error instanceof Error ? error.message : '게시글 수정 중 오류가 발생했습니다.';
+      Alert.alert('수정 실패', message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.centerText}>게시글을 불러오는 중입니다...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScreenContainer scroll>
-      <AppHeader
-        title="게시글 업로드"
-        subtitle="이미지를 선택하고 게시글과 함께 Supabase Storage에 업로드할 수 있습니다."
-      />
+      <View style={styles.topRow}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Text style={styles.backButtonText}>뒤로</Text>
+        </Pressable>
+        <Text style={styles.title}>게시글 수정</Text>
+        <View style={styles.topSpacer} />
+      </View>
 
       <Pressable style={styles.imageBox} onPress={handlePickImage}>
         {selectedImage?.uri ? (
           <Image source={{ uri: selectedImage.uri }} style={styles.previewImage} contentFit="cover" />
+        ) : currentImageUrl ? (
+          <Image source={{ uri: currentImageUrl }} style={styles.previewImage} contentFit="cover" />
         ) : (
           <Text style={styles.imageBoxText}>탭해서 이미지를 선택하세요.</Text>
         )}
       </Pressable>
-
-      {selectedImage ? (
-        <Pressable style={styles.secondaryButton} onPress={() => setSelectedImage(null)}>
-          <Text style={styles.secondaryButtonText}>선택한 이미지 제거</Text>
-        </Pressable>
-      ) : null}
 
       <View style={styles.formCard}>
         <Text style={styles.label}>게시글 설명</Text>
         <TextInput
           value={content}
           onChangeText={setContent}
-          placeholder="사육 환경, 케이지 구성, 추천 제품 정보를 자유롭게 적어주세요."
+          placeholder="게시글 내용을 수정하세요."
           placeholderTextColor={colors.textMuted}
           multiline
           textAlignVertical="top"
@@ -124,9 +160,7 @@ export default function UploadScreen() {
         <View style={styles.visibilityRow}>
           <View style={styles.visibilityTextGroup}>
             <Text style={styles.label}>공개 게시글</Text>
-            <Text style={styles.helperText}>
-              끄면 본인만 볼 수 있는 비공개 게시글로 저장됩니다.
-            </Text>
+            <Text style={styles.helperText}>비공개로 바꾸면 본인만 볼 수 있습니다.</Text>
           </View>
           <Switch
             value={isPublic}
@@ -138,10 +172,10 @@ export default function UploadScreen() {
 
         <Pressable
           style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
+          onPress={() => void handleSave()}
           disabled={isSubmitting}>
           <Text style={styles.submitButtonText}>
-            {isSubmitting ? '업로드 중...' : '업로드하기'}
+            {isSubmitting ? '저장 중...' : '수정 저장'}
           </Text>
         </Pressable>
       </View>
@@ -150,6 +184,44 @@ export default function UploadScreen() {
 }
 
 const styles = StyleSheet.create({
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: colors.background,
+    padding: 24,
+  },
+  centerText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  backButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  topSpacer: {
+    width: 54,
+  },
   imageBox: {
     height: 220,
     overflow: 'hidden',
@@ -170,18 +242,6 @@ const styles = StyleSheet.create({
   previewImage: {
     width: '100%',
     height: '100%',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.primaryLight,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.primary,
   },
   formCard: {
     padding: 18,

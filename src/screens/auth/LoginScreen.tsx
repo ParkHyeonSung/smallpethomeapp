@@ -5,7 +5,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
@@ -15,7 +15,7 @@ import { supabase } from '@/src/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const redirectTo = AuthSession.makeRedirectUri({
+const nativeRedirectTo = AuthSession.makeRedirectUri({
   native: 'smallpethomeapp:///login-callback',
 });
 
@@ -106,11 +106,45 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     try {
       setIsLoading(true);
+
+      if (Platform.OS === 'web') {
+        const webRedirectTo =
+          typeof window !== 'undefined' ? window.location.href : undefined;
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: webRedirectTo,
+            skipBrowserRedirect: true,
+            queryParams: {
+              prompt: 'select_account',
+            },
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data?.url) {
+          throw new Error('Google login URL was not created.');
+        }
+
+        if (typeof window !== 'undefined') {
+          window.location.assign(data.url);
+        }
+
+        return;
+      }
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
+          redirectTo: nativeRedirectTo,
           skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+          },
         },
       });
 
@@ -122,7 +156,7 @@ export default function LoginScreen() {
         throw new Error('Google login URL was not created.');
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, nativeRedirectTo);
 
       if (result.type !== 'success') {
         if (result.type !== 'cancel') {
