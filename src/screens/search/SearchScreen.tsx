@@ -77,7 +77,7 @@ export default function SearchScreen() {
 
       {!isLoading &&
         results.map((post) => (
-          <Pressable key={post.id} style={styles.resultCard} onPress={() => router.push(`/posts/${post.id}`)}>
+          <Pressable key={post.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
             {post.image_url ? (
               <Image source={{ uri: post.image_url }} style={styles.resultImage} contentFit="cover" />
             ) : (

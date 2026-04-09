@@ -104,9 +104,7 @@ export default function EditPostScreen() {
         isPublic,
       });
 
-      Alert.alert('수정 완료', '게시글이 수정되었습니다.', [
-        { text: '확인', onPress: () => router.replace(`/posts/${id}`) },
-      ]);
+      router.replace(`/posts/${id}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '게시글 수정 중 오류가 발생했습니다.';
@@ -175,7 +173,7 @@ export default function EditPostScreen() {
           onPress={() => void handleSave()}
           disabled={isSubmitting}>
           <Text style={styles.submitButtonText}>
-            {isSubmitting ? '저장 중...' : '수정 저장'}
+            {isSubmitting ? '저장 중...' : '수정하기'}
           </Text>
         </Pressable>
       </View>

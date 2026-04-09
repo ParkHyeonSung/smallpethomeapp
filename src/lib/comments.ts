@@ -115,3 +115,56 @@ export async function createComment(postId: string, content: string) {
 
   return normalizeComment(data);
 }
+
+export async function updateComment(commentId: string, content: string) {
+  const userId = await getCurrentUserId();
+  const trimmedContent = content.trim();
+
+  if (!trimmedContent) {
+    throw new Error('댓글 내용을 입력해주세요.');
+  }
+
+  const { data, error } = await supabase
+    .from('comments')
+    .update({
+      content: trimmedContent,
+    })
+    .eq('id', commentId)
+    .eq('user_id', userId)
+    .select(
+      `
+      id,
+      post_id,
+      user_id,
+      content,
+      created_at,
+      updated_at,
+      profiles:user_id (
+        id,
+        nickname,
+        avatar_url
+      )
+      `
+    )
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeComment(data);
+}
+
+export async function deleteComment(commentId: string) {
+  const userId = await getCurrentUserId();
+
+  const { error } = await supabase
+    .from('comments')
+    .delete()
+    .eq('id', commentId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+}

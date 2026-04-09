@@ -1,4 +1,5 @@
 import { supabase } from '@/src/lib/supabase';
+import { removePostImage } from '@/src/lib/storage';
 
 export type PostProfile = {
   id: string;
@@ -317,6 +318,17 @@ export async function deletePost(postId: string) {
     throw new Error('로그인이 필요합니다.');
   }
 
+  const { data: existingPost, error: fetchError } = await supabase
+    .from('posts')
+    .select('id, image_path')
+    .eq('id', postId)
+    .eq('author_id', user.id)
+    .single();
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
   const { error } = await supabase
     .from('posts')
     .delete()
@@ -325,5 +337,13 @@ export async function deletePost(postId: string) {
 
   if (error) {
     throw error;
+  }
+
+  if (existingPost?.image_path) {
+    try {
+      await removePostImage(existingPost.image_path);
+    } catch {
+      // Keep the post deleted even if storage cleanup fails.
+    }
   }
 }

@@ -58,3 +58,11 @@ export async function uploadPostImage(asset: ImagePickerAsset) {
     imageUrl: data.publicUrl,
   };
 }
+
+export async function removePostImage(imagePath: string) {
+  const { error } = await supabase.storage.from(POST_IMAGES_BUCKET).remove([imagePath]);
+
+  if (error) {
+    throw error;
+  }
+}

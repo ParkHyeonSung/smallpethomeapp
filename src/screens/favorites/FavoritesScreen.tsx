@@ -61,7 +61,7 @@ export default function FavoritesScreen() {
 
       {!isLoading &&
         posts.map((post) => (
-          <Pressable key={post.id} style={styles.postCard} onPress={() => router.push(`/posts/${post.id}`)}>
+          <Pressable key={post.id} style={styles.postCard} onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
             <View style={styles.postHeader}>
               <Text style={styles.author}>{post.profiles?.nickname ?? '사용자'}</Text>
               <Text style={styles.date}>{formatDate(post.created_at)}</Text>

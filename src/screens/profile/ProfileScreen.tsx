@@ -186,7 +186,7 @@ export default function ProfileScreen() {
                 key={post.id}
                 style={styles.gridCard}
                 activeOpacity={0.85}
-                onPress={() => router.push(`/posts/${post.id}`)}>
+                  onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
                 {post.image_url ? (
                   <Image
                     source={{ uri: post.image_url }}
