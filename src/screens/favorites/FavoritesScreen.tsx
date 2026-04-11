@@ -1,31 +1,50 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 
-import { router } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import { getMyFavoritePosts } from '@/src/lib/likes';
+import { getPostImagesByPostIds } from '@/src/lib/post-images';
 import { PostItem } from '@/src/lib/posts';
 
 export default function FavoritesScreen() {
   const isFocused = useIsFocused();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const cardWidth = isMobile ? '31.5%' : '18.6%';
+
   const [posts, setPosts] = useState<PostItem[]>([]);
+  const [imageCountByPostId, setImageCountByPostId] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
+    if (!isFocused) return;
 
     const loadFavoritePosts = async () => {
       try {
         setIsLoading(true);
         const data = await getMyFavoritePosts();
         setPosts(data);
+        const imageGroups = await getPostImagesByPostIds(data.map((post) => post.id));
+        setImageCountByPostId(
+          Object.fromEntries(
+            Object.entries(imageGroups).map(([postId, images]) => [postId, images.length])
+          )
+        );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : '좋아요한 게시글을 불러오는 중 오류가 발생했습니다.';
@@ -42,138 +61,135 @@ export default function FavoritesScreen() {
     <ScreenContainer scroll>
       <AppHeader
         title="좋아요"
-        subtitle="내가 좋아요한 게시글을 모아보는 화면입니다."
+        subtitle="마음에 들어 저장해둔 게시글을 한곳에서 다시 볼 수 있습니다."
       />
 
       {isLoading ? (
-        <View style={styles.card}>
+        <View style={styles.statePanel}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.cardText}>좋아요한 게시글을 불러오는 중입니다...</Text>
+          <Text style={styles.stateText}>좋아요한 게시글을 불러오는 중입니다...</Text>
         </View>
       ) : null}
 
       {!isLoading && posts.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>좋아요한 게시글이 없습니다.</Text>
-          <Text style={styles.cardText}>홈 탭에서 하트를 눌러 관심 게시글을 추가해보세요.</Text>
+        <View style={styles.statePanel}>
+          <Text style={styles.stateTitle}>좋아요한 게시글이 없습니다.</Text>
+          <Text style={styles.stateText}>마음에 드는 게시글에 하트를 눌러 저장해보세요.</Text>
         </View>
       ) : null}
 
-      {!isLoading &&
-        posts.map((post) => (
-          <Pressable key={post.id} style={styles.postCard} onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
-            <View style={styles.postHeader}>
-              <Text style={styles.author}>{post.profiles?.nickname ?? '사용자'}</Text>
-              <Text style={styles.date}>{formatDate(post.created_at)}</Text>
-            </View>
-
-            {post.image_url ? (
-              <Image source={{ uri: post.image_url }} style={styles.postImage} contentFit="cover" />
-            ) : (
-              <View style={styles.postImageFallback}>
-                <Text style={styles.postImageFallbackText}>TEXT POST</Text>
-              </View>
-            )}
-
-            <View style={styles.postBody}>
-              <Text style={styles.postContent} numberOfLines={3}>
-                {post.content}
-              </Text>
-              <Text style={styles.postMeta}>
-                좋아요 {post.like_count} · 댓글 {post.comment_count}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+      {!isLoading && posts.length > 0 ? (
+        <View style={styles.grid}>
+          {posts.map((post) => (
+            <Pressable
+              key={post.id}
+              style={[styles.gridCard, { width: cardWidth }]}
+              onPress={() =>
+                router.push({ pathname: '/posts/[id]', params: { id: post.id } })
+              }>
+              {(imageCountByPostId[post.id] ?? 0) > 1 ? (
+                <View style={styles.multiImageBadge}>
+                  <Ionicons name="copy-outline" size={14} color="#FFFFFF" />
+                </View>
+              ) : null}
+              {post.image_url ? (
+                <Image
+                  source={{ uri: post.image_url }}
+                  style={styles.gridImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.gridTextCard}>
+                  <Text style={styles.gridTextLabel}>TEXT</Text>
+                  <Text style={styles.gridTextPreview} numberOfLines={3}>
+                    {post.content}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </ScreenContainer>
   );
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '방금 전';
-  }
-
-  const now = new Date();
-  const sameYear = now.getFullYear() === date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return sameYear ? `${month}.${day}` : `${date.getFullYear()}.${month}.${day}`;
-}
-
 const styles = StyleSheet.create({
-  card: {
-    padding: 18,
-    borderRadius: 18,
+  statePanel: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 160,
+    padding: 20,
+    borderRadius: 24,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 8,
   },
-  cardTitle: {
+  stateTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
+    fontWeight: '800',
+    color: colors.primaryStrong,
   },
-  cardText: {
+  stateText: {
     fontSize: 14,
     lineHeight: 21,
+    textAlign: 'center',
     color: colors.textMuted,
   },
-  postCard: {
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+  },
+  gridCard: {
     overflow: 'hidden',
     borderRadius: 20,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
-  postHeader: {
-    flexDirection: 'row',
+  multiImageBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 24, 20, 0.62)',
   },
-  author: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  date: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  postImage: {
+  gridImage: {
     width: '100%',
-    height: 180,
+    aspectRatio: 1,
   },
-  postImageFallback: {
-    height: 140,
+  gridTextCard: {
+    width: '100%',
+    aspectRatio: 1,
+    padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primaryLight,
-  },
-  postImageFallbackText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 1,
-  },
-  postBody: {
-    padding: 14,
     gap: 8,
   },
-  postContent: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: colors.text,
+  gridTextLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: colors.primaryStrong,
   },
-  postMeta: {
+  gridTextPreview: {
     fontSize: 12,
-    color: colors.textMuted,
+    lineHeight: 17,
+    textAlign: 'center',
+    color: colors.primaryStrong,
   },
 });

@@ -5,12 +5,21 @@ import * as AuthSession from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
-import { upsertMyProfile } from '@/src/lib/profiles';
+import { signInWithLoginId, signUpWithLoginId } from '@/src/lib/auth';
+import { upsertMyProfile, upsertProfileForCredentials } from '@/src/lib/profiles';
 import { supabase } from '@/src/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -19,8 +28,15 @@ const nativeRedirectTo = AuthSession.makeRedirectUri({
   native: 'smallpethomeapp:///login-callback',
 });
 
+type AuthMode = 'login' | 'signup';
+
 export default function LoginScreen() {
-  const [isLoading, setIsLoading] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [loginId, setLoginId] = useState('');
+  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isCredentialsLoading, setIsCredentialsLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -34,8 +50,6 @@ export default function LoginScreen() {
         router.replace('/(tabs)');
       }
     };
-
-    void syncSession();
 
     const createSessionFromUrl = async (url: string) => {
       const { params, errorCode } = QueryParams.getQueryParams(url);
@@ -63,7 +77,6 @@ export default function LoginScreen() {
 
     const handleInitialUrl = async () => {
       const initialUrl = await Linking.getInitialURL();
-
       if (!initialUrl) {
         return;
       }
@@ -71,6 +84,7 @@ export default function LoginScreen() {
       await createSessionFromUrl(initialUrl);
     };
 
+    void syncSession();
     void handleInitialUrl();
 
     const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
@@ -90,8 +104,8 @@ export default function LoginScreen() {
           router.replace('/(tabs)');
         } catch (error) {
           const message =
-            error instanceof Error ? error.message : 'Failed to save your profile.';
-          Alert.alert('Profile Sync Failed', message);
+            error instanceof Error ? error.message : '프로필 저장 중 문제가 발생했어요.';
+          Alert.alert('로그인 오류', message);
         }
       })();
     });
@@ -103,9 +117,15 @@ export default function LoginScreen() {
     };
   }, []);
 
+  const resetInputs = () => {
+    setLoginId('');
+    setPassword('');
+    setNickname('');
+  };
+
   const handleGoogleLogin = async () => {
     try {
-      setIsLoading(true);
+      setIsGoogleLoading(true);
 
       if (Platform.OS === 'web') {
         const webRedirectTo =
@@ -127,7 +147,7 @@ export default function LoginScreen() {
         }
 
         if (!data?.url) {
-          throw new Error('Google login URL was not created.');
+          throw new Error('Google 로그인 URL을 만들지 못했어요.');
         }
 
         if (typeof window !== 'undefined') {
@@ -153,24 +173,50 @@ export default function LoginScreen() {
       }
 
       if (!data?.url) {
-        throw new Error('Google login URL was not created.');
+        throw new Error('Google 로그인 URL을 만들지 못했어요.');
       }
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, nativeRedirectTo);
 
-      if (result.type !== 'success') {
-        if (result.type !== 'cancel') {
-          Alert.alert('Login Cancelled', 'The Google sign-in flow did not complete.');
-        }
-        return;
+      if (result.type !== 'success' && result.type !== 'cancel') {
+        Alert.alert('로그인 실패', 'Google 로그인 흐름을 완료하지 못했어요.');
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'An error occurred during Google sign-in.';
+        error instanceof Error ? error.message : 'Google 로그인 중 오류가 발생했어요.';
 
-      Alert.alert('Login Failed', message);
+      Alert.alert('로그인 실패', message);
     } finally {
-      setIsLoading(false);
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleCredentialsSubmit = async () => {
+    try {
+      setIsCredentialsLoading(true);
+
+      if (mode === 'signup') {
+        await signUpWithLoginId({
+          loginId,
+          password,
+          nickname,
+        });
+
+        await upsertProfileForCredentials({ nickname });
+        router.replace('/(tabs)');
+        return;
+      }
+
+      await signInWithLoginId({ loginId, password });
+      await upsertMyProfile();
+      router.replace('/(tabs)');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '인증 처리 중 오류가 발생했어요.';
+
+      Alert.alert(mode === 'signup' ? '회원가입 실패' : '로그인 실패', message);
+    } finally {
+      setIsCredentialsLoading(false);
     }
   };
 
@@ -179,29 +225,107 @@ export default function LoginScreen() {
       <View style={styles.hero}>
         <Text style={styles.badge}>Small Pet Home</Text>
         <AppHeader
-          title="Share and plan a home for your small pet"
-          subtitle="Connect habitat photos, product tags, layout ideas, and future AI support in one mobile app."
+          title="소동물 집 정보를 함께 나누세요"
+          subtitle="Google 로그인도 가능하고, 아이디와 비밀번호로 바로 회원가입해서 시작할 수도 있어요."
         />
       </View>
 
+      <View style={styles.modeRow}>
+        <Pressable
+          style={[styles.modeChip, mode === 'login' && styles.modeChipActive]}
+          onPress={() => {
+            setMode('login');
+            setNickname('');
+          }}>
+          <Text style={[styles.modeChipText, mode === 'login' && styles.modeChipTextActive]}>
+            아이디 로그인
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeChip, mode === 'signup' && styles.modeChipActive]}
+          onPress={() => setMode('signup')}>
+          <Text style={[styles.modeChipText, mode === 'signup' && styles.modeChipTextActive]}>
+            회원가입
+          </Text>
+        </Pressable>
+      </View>
+
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Start with Google</Text>
+        <Text style={styles.cardTitle}>
+          {mode === 'signup' ? '아이디로 회원가입' : '아이디로 로그인'}
+        </Text>
         <Text style={styles.cardDescription}>
-          Sign in with your Google account first, then we can connect community, upload, and profile features step by step.
+          {mode === 'signup'
+            ? '회원가입이 끝나면 바로 로그인되고, 입력한 닉네임이 프로필 이름으로 저장돼요.'
+            : '가입한 아이디와 비밀번호로 바로 로그인할 수 있어요.'}
         </Text>
 
+        {mode === 'signup' ? (
+          <TextInput
+            value={nickname}
+            onChangeText={setNickname}
+            placeholder="닉네임"
+            placeholderTextColor={colors.textMuted}
+            style={styles.input}
+          />
+        ) : null}
+
+        <TextInput
+          value={loginId}
+          onChangeText={setLoginId}
+          placeholder="아이디"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          style={styles.input}
+        />
+
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="비밀번호"
+          placeholderTextColor={colors.textMuted}
+          secureTextEntry
+          style={styles.input}
+        />
+
         <Pressable
-          style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
-          onPress={handleGoogleLogin}
-          disabled={isLoading}>
+          style={[styles.primaryButton, isCredentialsLoading && styles.primaryButtonDisabled]}
+          onPress={() => void handleCredentialsSubmit()}
+          disabled={isCredentialsLoading}>
           <Text style={styles.primaryButtonText}>
-            {isLoading ? 'Connecting...' : 'Continue with Google'}
+            {isCredentialsLoading
+              ? mode === 'signup'
+                ? '가입 중...'
+                : '로그인 중...'
+              : mode === 'signup'
+                ? '회원가입하기'
+                : '로그인하기'}
           </Text>
         </Pressable>
 
         <Text style={styles.caption}>
-          After sign-in succeeds, the Supabase session is stored and the app moves to the main tab screen.
+          아이디는 영문 소문자, 숫자, 점(.), 밑줄(_), 하이픈(-) 조합으로 4자 이상을 권장해요.
         </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Google로 시작하기</Text>
+        <Text style={styles.cardDescription}>
+          Google 계정으로 로그인하면 이름과 프로필 정보가 자동으로 반영돼요.
+        </Text>
+
+        <Pressable
+          style={[styles.secondaryPrimaryButton, isGoogleLoading && styles.primaryButtonDisabled]}
+          onPress={() => void handleGoogleLogin()}
+          disabled={isGoogleLoading}>
+          <Text style={styles.primaryButtonText}>
+            {isGoogleLoading ? '연결 중...' : 'Google로 계속하기'}
+          </Text>
+        </Pressable>
+
+        <Pressable style={styles.resetButton} onPress={resetInputs}>
+          <Text style={styles.resetButtonText}>입력 초기화</Text>
+        </Pressable>
       </View>
     </ScreenContainer>
   );
@@ -210,8 +334,9 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingVertical: 32,
+    gap: 16,
+    justifyContent: 'center',
+    paddingVertical: 24,
   },
   hero: {
     gap: 16,
@@ -224,6 +349,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
     color: colors.primary,
     fontWeight: '600',
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeChip: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modeChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: '#B9D8CC',
+  },
+  modeChipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  modeChipTextActive: {
+    color: colors.primaryStrong,
   },
   card: {
     gap: 14,
@@ -243,13 +394,29 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: colors.textMuted,
   },
+  input: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.text,
+  },
   primaryButton: {
-    marginTop: 8,
+    marginTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
     borderRadius: 14,
     backgroundColor: colors.primary,
+  },
+  secondaryPrimaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: colors.primaryStrong,
   },
   primaryButtonDisabled: {
     opacity: 0.7,
@@ -263,5 +430,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: colors.textMuted,
+  },
+  resetButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  resetButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });

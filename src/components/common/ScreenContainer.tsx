@@ -25,7 +25,11 @@ export default function ScreenContainer({
     );
   }
 
-  return <SafeAreaView style={[styles.safeArea, styles.content, contentStyle]}>{children}</SafeAreaView>;
+  return (
+    <SafeAreaView style={[styles.safeArea, styles.content, contentStyle]}>
+      {children}
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -34,10 +38,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
   },
   scrollContent: {
-    padding: 20,
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 40,
+    gap: 18,
   },
 });

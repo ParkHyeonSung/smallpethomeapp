@@ -59,6 +59,16 @@ export async function uploadPostImage(asset: ImagePickerAsset) {
   };
 }
 
+export async function uploadPostImages(assets: ImagePickerAsset[]) {
+  const uploads = [];
+
+  for (const asset of assets) {
+    uploads.push(await uploadPostImage(asset));
+  }
+
+  return uploads;
+}
+
 export async function removePostImage(imagePath: string) {
   const { error } = await supabase.storage.from(POST_IMAGES_BUCKET).remove([imagePath]);
 

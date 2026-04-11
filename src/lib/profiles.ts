@@ -3,6 +3,7 @@ import { supabase } from '@/src/lib/supabase';
 type UserMetadata = {
   avatar_url?: unknown;
   full_name?: unknown;
+  login_id?: unknown;
   name?: unknown;
 };
 
@@ -42,6 +43,44 @@ export async function upsertMyProfile() {
     email: user.email ?? '',
     nickname: getNickname(metadata),
     avatar_url: getAvatarUrl(metadata),
+  };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(payload, { onConflict: 'id' })
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function upsertProfileForCredentials({
+  nickname,
+}: {
+  nickname: string;
+}) {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    throw userError;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  const payload = {
+    id: user.id,
+    email: user.email ?? '',
+    nickname: nickname.trim(),
+    avatar_url: null,
   };
 
   const { data, error } = await supabase

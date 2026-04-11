@@ -20,6 +20,24 @@ export type PostProductTagInput = {
   yPosition: number;
 };
 
+export function isValidProductUrl(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmedValue);
+    const isHttp = url.protocol === 'http:' || url.protocol === 'https:';
+    const hasHostname = url.hostname.includes('.') && url.hostname !== 'localhost';
+
+    return isHttp && hasHostname;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeTag(row: any): PostProductTag {
   return {
     id: row.id,
@@ -51,6 +69,11 @@ export async function getPostTagsByPostId(postId: string) {
 export async function createPostTags(postId: string, tags: PostProductTagInput[]) {
   if (tags.length === 0) {
     return [];
+  }
+
+  const hasInvalidUrl = tags.some((tag) => !isValidProductUrl(tag.productUrl));
+  if (hasInvalidUrl) {
+    throw new Error('제품 태그 링크는 실제 외부 쇼핑몰 URL 형식이어야 합니다.');
   }
 
   const {
@@ -86,6 +109,11 @@ export async function createPostTags(postId: string, tags: PostProductTagInput[]
 }
 
 export async function replacePostTags(postId: string, tags: PostProductTagInput[]) {
+  const hasInvalidUrl = tags.some((tag) => !isValidProductUrl(tag.productUrl));
+  if (hasInvalidUrl) {
+    throw new Error('제품 태그 링크는 실제 외부 쇼핑몰 URL 형식이어야 합니다.');
+  }
+
   const {
     data: { user },
     error: userError,

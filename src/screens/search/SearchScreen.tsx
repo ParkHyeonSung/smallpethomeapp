@@ -1,31 +1,60 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useDeferredValue, useEffect, useState } from 'react';
-
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
+import { getPostImagesByPostIds } from '@/src/lib/post-images';
 import { PostItem, searchPublicPosts } from '@/src/lib/posts';
 
-const suggestedKeywords = ['햄스터 케이지', '은신처 추천', '친칠라 모래목욕'];
+const suggestedKeywords = ['햄스터 케이지', '고슴도치 은신처', '도마뱀 온습도'];
 
 export default function SearchScreen() {
+  const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PostItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [imageCountByPostId, setImageCountByPostId] = useState<Record<string, number>>({});
+  const [isLoading, setIsLoading] = useState(false);
   const deferredQuery = useDeferredValue(query);
+  const trimmedQuery = deferredQuery.trim();
+  const hasQuery = trimmedQuery.length > 0;
+  const isMobile = width < 768;
+  const cardWidth = isMobile ? '31.5%' : '18.6%';
 
   useEffect(() => {
+    if (!hasQuery) {
+      setResults([]);
+      setImageCountByPostId({});
+      setIsLoading(false);
+      return;
+    }
+
     const loadResults = async () => {
       try {
         setIsLoading(true);
-        const data = await searchPublicPosts(deferredQuery);
+        const data = await searchPublicPosts(trimmedQuery);
         setResults(data);
+        const imageGroups = await getPostImagesByPostIds(data.map((post) => post.id));
+        setImageCountByPostId(
+          Object.fromEntries(
+            Object.entries(imageGroups).map(([postId, images]) => [postId, images.length])
+          )
+        );
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : '검색 중 오류가 발생했습니다.';
+          error instanceof Error ? error.message : '검색 결과를 불러오는 중 오류가 발생했습니다.';
         Alert.alert('검색 실패', message);
       } finally {
         setIsLoading(false);
@@ -33,158 +62,216 @@ export default function SearchScreen() {
     };
 
     void loadResults();
-  }, [deferredQuery]);
+  }, [hasQuery, trimmedQuery]);
 
   return (
     <ScreenContainer scroll>
       <AppHeader
         title="검색"
-        subtitle="작성자 이름이나 게시글 내용을 기준으로 커뮤니티 게시글을 검색할 수 있습니다."
+        subtitle="작성자 이름이나 게시글 내용으로 원하는 게시글을 빠르게 찾아보세요."
       />
 
-      <TextInput
-        value={query}
-        onChangeText={setQuery}
-        placeholder="검색어를 입력하세요"
-        placeholderTextColor={colors.textMuted}
-        style={styles.searchInput}
-      />
+      <View style={styles.searchShell}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="궁금한 키워드를 입력해보세요"
+          placeholderTextColor={colors.textMuted}
+          style={styles.searchInput}
+        />
+      </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>추천 검색</Text>
+      <View style={styles.panel}>
+        <Text style={styles.panelTitle}>추천 검색</Text>
         <View style={styles.keywordRow}>
           {suggestedKeywords.map((keyword) => (
-            <Pressable key={keyword} style={styles.keywordChip} onPress={() => setQuery(keyword)}>
+            <Pressable
+              key={keyword}
+              style={styles.keywordChip}
+              onPress={() => setQuery(keyword)}>
               <Text style={styles.keywordChipText}>{keyword}</Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      {isLoading ? (
-        <View style={styles.card}>
+      {hasQuery && isLoading ? (
+        <View style={styles.statePanel}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.cardText}>검색 결과를 불러오는 중입니다...</Text>
+          <Text style={styles.stateText}>검색 결과를 불러오는 중입니다...</Text>
         </View>
       ) : null}
 
-      {!isLoading && results.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>검색 결과가 없습니다.</Text>
-          <Text style={styles.cardText}>다른 키워드로 다시 검색해보세요.</Text>
+      {hasQuery && !isLoading && results.length === 0 ? (
+        <View style={styles.statePanel}>
+          <Text style={styles.stateTitle}>검색 결과가 없습니다.</Text>
+          <Text style={styles.stateText}>다른 검색어로 다시 시도해보세요.</Text>
         </View>
       ) : null}
 
-      {!isLoading &&
-        results.map((post) => (
-          <Pressable key={post.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
-            {post.image_url ? (
-              <Image source={{ uri: post.image_url }} style={styles.resultImage} contentFit="cover" />
-            ) : (
-              <View style={styles.resultImageFallback}>
-                <Text style={styles.resultImageFallbackText}>TEXT</Text>
-              </View>
-            )}
-
-            <View style={styles.resultBody}>
-              <Text style={styles.resultAuthor}>{post.profiles?.nickname ?? '사용자'}</Text>
-              <Text style={styles.resultContent} numberOfLines={3}>
-                {post.content}
-              </Text>
-              <Text style={styles.resultMeta}>
-                좋아요 {post.like_count} · 댓글 {post.comment_count}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+      {hasQuery && !isLoading && results.length > 0 ? (
+        <View style={styles.grid}>
+          {results.map((post) => (
+            <Pressable
+              key={post.id}
+              style={[styles.card, { width: cardWidth }]}
+              onPress={() =>
+                router.push({ pathname: '/posts/[id]', params: { id: post.id } })
+              }>
+              {(imageCountByPostId[post.id] ?? 0) > 1 ? (
+                <View style={styles.multiImageBadge}>
+                  <Ionicons name="copy-outline" size={14} color="#FFFFFF" />
+                </View>
+              ) : null}
+              {post.image_url ? (
+                <Image
+                  source={{ uri: post.image_url }}
+                  style={styles.cardImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.cardFallback}>
+                  <Text style={styles.cardFallbackLabel}>TEXT</Text>
+                  <Text style={styles.cardFallbackText} numberOfLines={3}>
+                    {post.content}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  searchInput: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
+  searchShell: {
+    padding: 6,
+    borderRadius: 24,
+    backgroundColor: colors.backgroundAccent,
     borderWidth: 1,
     borderColor: colors.border,
-    fontSize: 15,
-    color: colors.text,
   },
-  card: {
-    padding: 18,
+  searchInput: {
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     borderRadius: 18,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 10,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 15,
     color: colors.text,
   },
-  cardText: {
-    fontSize: 15,
-    color: colors.textMuted,
+  panel: {
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+    gap: 12,
+  },
+  panelTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primaryStrong,
   },
   keywordRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   keywordChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 999,
     backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: '#C9DED5',
   },
   keywordChipText: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.primaryStrong,
   },
-  resultCard: {
-    overflow: 'hidden',
-    borderRadius: 18,
+  statePanel: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 160,
+    padding: 20,
+    borderRadius: 24,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  resultImage: {
-    width: '100%',
-    height: 180,
+  stateTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primaryStrong,
   },
-  resultImageFallback: {
+  stateText: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    color: colors.textMuted,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+  },
+  card: {
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  multiImageBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 24, 20, 0.62)',
+  },
+  cardImage: {
     width: '100%',
-    height: 120,
+    aspectRatio: 1,
+  },
+  cardFallback: {
+    width: '100%',
+    aspectRatio: 1,
+    padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primaryLight,
+    gap: 8,
   },
-  resultImageFallbackText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
+  cardFallbackLabel: {
+    fontSize: 11,
+    fontWeight: '800',
     letterSpacing: 1,
+    color: colors.primaryStrong,
   },
-  resultBody: {
-    padding: 14,
-    gap: 6,
-  },
-  resultAuthor: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  resultContent: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: colors.text,
-  },
-  resultMeta: {
+  cardFallbackText: {
     fontSize: 12,
-    color: colors.textMuted,
+    lineHeight: 17,
+    textAlign: 'center',
+    color: colors.primaryStrong,
   },
 });
