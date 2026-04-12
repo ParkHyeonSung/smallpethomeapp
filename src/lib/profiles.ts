@@ -23,6 +23,19 @@ function getAvatarUrl(metadata: UserMetadata) {
   return typeof metadata.avatar_url === 'string' ? metadata.avatar_url : null;
 }
 
+function formatProfileErrorMessage(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message;
+  }
+
+  return '프로필 저장 중 문제가 발생했어요.';
+}
+
 export async function upsertMyProfile() {
   const {
     data: { user },
@@ -52,7 +65,7 @@ export async function upsertMyProfile() {
     .single();
 
   if (error) {
-    throw error;
+    throw new Error(formatProfileErrorMessage(error));
   }
 
   return data;
@@ -90,7 +103,7 @@ export async function upsertProfileForCredentials({
     .single();
 
   if (error) {
-    throw error;
+    throw new Error(formatProfileErrorMessage(error));
   }
 
   return data;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { router } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
@@ -27,6 +27,7 @@ const nativeRedirectTo = AuthSession.makeRedirectUri({
 type AuthMode = 'login' | 'signup';
 
 export default function LoginScreen() {
+  const skipNextAuthStateProfileSyncRef = useRef(false);
   const [mode, setMode] = useState<AuthMode>('login');
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
@@ -93,6 +94,11 @@ export default function LoginScreen() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        return;
+      }
+
+      if (skipNextAuthStateProfileSyncRef.current) {
+        skipNextAuthStateProfileSyncRef.current = false;
         return;
       }
 
@@ -200,6 +206,8 @@ export default function LoginScreen() {
       setFeedbackMessage('');
 
       if (mode === 'signup') {
+        skipNextAuthStateProfileSyncRef.current = true;
+
         await signUpWithLoginId({
           loginId,
           password,
@@ -213,6 +221,7 @@ export default function LoginScreen() {
         return;
       }
 
+      skipNextAuthStateProfileSyncRef.current = true;
       await signInWithLoginId({ loginId, password });
       await upsertMyProfile();
       setFeedbackTone('success');
