@@ -44,6 +44,57 @@ export function validateNickname(nickname: string) {
   return trimmed;
 }
 
+async function clearExistingSession() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    return;
+  }
+
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    throw error;
+  }
+}
+
+export function formatAuthErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return '인증 처리 중 문제가 발생했어요.';
+  }
+
+  const lowerMessage = error.message.toLowerCase();
+
+  if (error instanceof AuthError) {
+    // Supabase error codes/messages we expect in this project.
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
+
+    if (code === 'email_provider_disabled') {
+      return 'Supabase에서 Email 로그인이 꺼져 있어 회원가입이 막혀 있어요. Authentication > Providers > Email을 켜주세요.';
+    }
+
+    if (code === 'user_already_exists' || lowerMessage.includes('already registered')) {
+      return '이미 사용 중인 아이디예요. 다른 아이디로 다시 시도해주세요.';
+    }
+
+    if (lowerMessage.includes('email not confirmed')) {
+      return '현재 Supabase에서 이메일 확인이 켜져 있어 자동 로그인이 막혀 있어요. 테스트용이라면 Confirm email을 꺼주세요.';
+    }
+
+    if (lowerMessage.includes('invalid login credentials')) {
+      return '아이디 또는 비밀번호가 맞지 않아요.';
+    }
+
+    if (lowerMessage.includes('password')) {
+      return '비밀번호 조건을 다시 확인해주세요.';
+    }
+  }
+
+  return error.message;
+}
+
 async function signInAfterSignUp(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -51,13 +102,7 @@ async function signInAfterSignUp(email: string, password: string) {
   });
 
   if (error) {
-    if (error instanceof AuthError && error.message.toLowerCase().includes('email not confirmed')) {
-      throw new Error(
-        '현재 Supabase에서 이메일 확인이 켜져 있어 아이디 회원가입 직후 자동 로그인이 막혀 있어요. Supabase Authentication 설정에서 Confirm email을 꺼주세요.'
-      );
-    }
-
-    throw error;
+    throw new Error(formatAuthErrorMessage(error));
   }
 
   return data;
@@ -77,6 +122,8 @@ export async function signUpWithLoginId({
   const validNickname = validateNickname(nickname);
   const email = loginIdToEmail(normalizedLoginId);
 
+  await clearExistingSession();
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password: validPassword,
@@ -91,7 +138,7 @@ export async function signUpWithLoginId({
   });
 
   if (error) {
-    throw error;
+    throw new Error(formatAuthErrorMessage(error));
   }
 
   if (data.session && data.user) {
@@ -123,13 +170,15 @@ export async function signInWithLoginId({
   const normalizedLoginId = validateLoginId(loginId);
   const validPassword = validatePassword(password);
 
+  await clearExistingSession();
+
   const { data, error } = await supabase.auth.signInWithPassword({
     email: loginIdToEmail(normalizedLoginId),
     password: validPassword,
   });
 
   if (error) {
-    throw error;
+    throw new Error(formatAuthErrorMessage(error));
   }
 
   return {

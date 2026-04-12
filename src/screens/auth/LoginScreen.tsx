@@ -5,20 +5,16 @@ import * as AuthSession from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import {
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
-import { signInWithLoginId, signUpWithLoginId } from '@/src/lib/auth';
+import {
+  formatAuthErrorMessage,
+  signInWithLoginId,
+  signUpWithLoginId,
+} from '@/src/lib/auth';
 import { upsertMyProfile, upsertProfileForCredentials } from '@/src/lib/profiles';
 import { supabase } from '@/src/lib/supabase';
 
@@ -35,6 +31,8 @@ export default function LoginScreen() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackTone, setFeedbackTone] = useState<'error' | 'success'>('error');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isCredentialsLoading, setIsCredentialsLoading] = useState(false);
 
@@ -103,9 +101,10 @@ export default function LoginScreen() {
           await upsertMyProfile();
           router.replace('/(tabs)');
         } catch (error) {
-          const message =
-            error instanceof Error ? error.message : '프로필 저장 중 문제가 발생했어요.';
-          Alert.alert('로그인 오류', message);
+          setFeedbackTone('error');
+          setFeedbackMessage(
+            error instanceof Error ? error.message : '프로필 저장 중 문제가 발생했어요.'
+          );
         }
       })();
     });
@@ -121,11 +120,18 @@ export default function LoginScreen() {
     setLoginId('');
     setPassword('');
     setNickname('');
+    setFeedbackMessage('');
+  };
+
+  const setErrorFeedback = (error: unknown) => {
+    setFeedbackTone('error');
+    setFeedbackMessage(formatAuthErrorMessage(error));
   };
 
   const handleGoogleLogin = async () => {
     try {
       setIsGoogleLoading(true);
+      setFeedbackMessage('');
 
       if (Platform.OS === 'web') {
         const webRedirectTo =
@@ -179,13 +185,10 @@ export default function LoginScreen() {
       const result = await WebBrowser.openAuthSessionAsync(data.url, nativeRedirectTo);
 
       if (result.type !== 'success' && result.type !== 'cancel') {
-        Alert.alert('로그인 실패', 'Google 로그인 흐름을 완료하지 못했어요.');
+        throw new Error('Google 로그인 흐름을 완료하지 못했어요.');
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Google 로그인 중 오류가 발생했어요.';
-
-      Alert.alert('로그인 실패', message);
+      setErrorFeedback(error);
     } finally {
       setIsGoogleLoading(false);
     }
@@ -194,6 +197,7 @@ export default function LoginScreen() {
   const handleCredentialsSubmit = async () => {
     try {
       setIsCredentialsLoading(true);
+      setFeedbackMessage('');
 
       if (mode === 'signup') {
         await signUpWithLoginId({
@@ -203,18 +207,19 @@ export default function LoginScreen() {
         });
 
         await upsertProfileForCredentials({ nickname });
+        setFeedbackTone('success');
+        setFeedbackMessage('회원가입이 완료되어 바로 로그인했어요.');
         router.replace('/(tabs)');
         return;
       }
 
       await signInWithLoginId({ loginId, password });
       await upsertMyProfile();
+      setFeedbackTone('success');
+      setFeedbackMessage('로그인에 성공했어요.');
       router.replace('/(tabs)');
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '인증 처리 중 오류가 발생했어요.';
-
-      Alert.alert(mode === 'signup' ? '회원가입 실패' : '로그인 실패', message);
+      setErrorFeedback(error);
     } finally {
       setIsCredentialsLoading(false);
     }
@@ -226,7 +231,7 @@ export default function LoginScreen() {
         <Text style={styles.badge}>Small Pet Home</Text>
         <AppHeader
           title="소동물 집 정보를 함께 나누세요"
-          subtitle="Google 로그인도 가능하고, 아이디와 비밀번호로 바로 회원가입해서 시작할 수도 있어요."
+          subtitle="Google 로그인도 가능하고, 테스트용 계정은 아이디와 비밀번호로 바로 만들 수 있어요."
         />
       </View>
 
@@ -236,6 +241,7 @@ export default function LoginScreen() {
           onPress={() => {
             setMode('login');
             setNickname('');
+            setFeedbackMessage('');
           }}>
           <Text style={[styles.modeChipText, mode === 'login' && styles.modeChipTextActive]}>
             아이디 로그인
@@ -243,7 +249,10 @@ export default function LoginScreen() {
         </Pressable>
         <Pressable
           style={[styles.modeChip, mode === 'signup' && styles.modeChipActive]}
-          onPress={() => setMode('signup')}>
+          onPress={() => {
+            setMode('signup');
+            setFeedbackMessage('');
+          }}>
           <Text style={[styles.modeChipText, mode === 'signup' && styles.modeChipTextActive]}>
             회원가입
           </Text>
@@ -256,9 +265,25 @@ export default function LoginScreen() {
         </Text>
         <Text style={styles.cardDescription}>
           {mode === 'signup'
-            ? '회원가입이 끝나면 바로 로그인되고, 입력한 닉네임이 프로필 이름으로 저장돼요.'
+            ? '닉네임, 아이디, 비밀번호를 입력하면 테스트용 계정과 프로필이 함께 만들어져요.'
             : '가입한 아이디와 비밀번호로 바로 로그인할 수 있어요.'}
         </Text>
+
+        {feedbackMessage ? (
+          <View
+            style={[
+              styles.feedbackBox,
+              feedbackTone === 'error' ? styles.feedbackError : styles.feedbackSuccess,
+            ]}>
+            <Text
+              style={[
+                styles.feedbackText,
+                feedbackTone === 'error' ? styles.feedbackErrorText : styles.feedbackSuccessText,
+              ]}>
+              {feedbackMessage}
+            </Text>
+          </View>
+        ) : null}
 
         {mode === 'signup' ? (
           <TextInput
@@ -393,6 +418,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: colors.textMuted,
+  },
+  feedbackBox: {
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  feedbackError: {
+    backgroundColor: '#FDECEC',
+    borderWidth: 1,
+    borderColor: '#F6C8C8',
+  },
+  feedbackSuccess: {
+    backgroundColor: '#E8F6F0',
+    borderWidth: 1,
+    borderColor: '#BEE3D1',
+  },
+  feedbackText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  feedbackErrorText: {
+    color: '#A62D2D',
+  },
+  feedbackSuccessText: {
+    color: '#236B4D',
   },
   input: {
     minHeight: 48,
