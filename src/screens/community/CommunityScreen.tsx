@@ -361,7 +361,7 @@ export default function CommunityScreen() {
       <View style={styles.headerRow}>
         <Pressable
           style={styles.menuButton}
-          onPress={() => Alert.alert('메뉴', '이 버튼을 통해 이후 기능 화면으로 확장할 수 있습니다.')}>
+          onPress={() => router.push('/stress-check')}>
           <Ionicons name="menu" size={22} color={colors.text} />
         </Pressable>
         <View style={styles.headerContent}>
