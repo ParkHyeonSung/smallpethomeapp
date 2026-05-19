@@ -23,22 +23,22 @@ import {
 
 const LEVEL_META: Record<
   StressDiagnosisReport['level'],
-  { label: string; color: string; bg: string }
+  { label: string; color: string; backgroundColor: string }
 > = {
   stable: {
     label: '안정',
     color: '#236B4D',
-    bg: '#E7F6EF',
+    backgroundColor: '#E7F6EF',
   },
   caution: {
     label: '주의',
     color: '#9A6700',
-    bg: '#FFF3D6',
+    backgroundColor: '#FFF3D6',
   },
   warning: {
-    label: '경고',
+    label: '위험',
     color: '#A62D2D',
-    bg: '#FDECEC',
+    backgroundColor: '#FDECEC',
   },
 };
 
@@ -87,36 +87,54 @@ function mapVibrationRmsToLevel(rms: number) {
   return clamp(Math.round(rms * 42), 0, 10);
 }
 
+function getVibrationBandLabel(level: number) {
+  if (level >= 8) return '매우 높음';
+  if (level >= 6) return '높음';
+  if (level >= 4) return '보통';
+  if (level >= 2) return '낮음';
+  return '매우 낮음';
+}
+
 export default function StressDiagnosisScreen() {
   const audioRecorder = useAudioRecorder(recorderOptions);
   const recorderState = useAudioRecorderState(audioRecorder, 150);
 
   const vibrationSubscriptionRef = useRef<ReturnType<typeof Accelerometer.addListener> | null>(null);
+  const noiseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vibrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vibrationSamplesRef = useRef<number[]>([]);
-  const measurementTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [species, setSpecies] = useState('햄스터');
   const [cageWidthCm, setCageWidthCm] = useState('60');
   const [cageDepthCm, setCageDepthCm] = useState('40');
-  const [ambientNoiseDb, setAmbientNoiseDb] = useState('62');
-  const [vibrationLevel, setVibrationLevel] = useState(3);
+  const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
+  const [vibrationLevel, setVibrationLevel] = useState(0);
   const [trafficLevel, setTrafficLevel] = useState<TrafficLevel>('medium');
   const [hideoutReady, setHideoutReady] = useState(true);
   const [ventilationReady, setVentilationReady] = useState(true);
   const [directSunlight, setDirectSunlight] = useState(false);
   const [nearSpeaker, setNearSpeaker] = useState(false);
   const [unstableFloor, setUnstableFloor] = useState(false);
-  const [hasRunDiagnosis, setHasRunDiagnosis] = useState(false);
+
+  const [hasAcceptedMeasurementNotice, setHasAcceptedMeasurementNotice] = useState(false);
+  const [microphoneReady, setMicrophoneReady] = useState(false);
+  const [motionReady, setMotionReady] = useState(false);
+  const [permissionStatusText, setPermissionStatusText] = useState(
+    '먼저 마이크와 가속도 센서 사용 목적을 확인하고 측정 준비를 진행해 주세요.'
+  );
 
   const [noiseMeasurementLabel, setNoiseMeasurementLabel] = useState(
-    '마이크 권한을 허용하면 4초간 주변 소음을 측정해 추정 dB 값을 채울 수 있습니다.'
+    '아직 소음 측정을 하지 않았습니다. 측정을 시작하면 4초 동안 간이 소음 값을 읽습니다.'
   );
   const [vibrationMeasurementLabel, setVibrationMeasurementLabel] = useState(
-    '기기를 케이지 받침대 근처에 두고 4초간 진동을 측정할 수 있습니다.'
+    '아직 진동 측정을 하지 않았습니다. 측정을 시작하면 4초 동안 센서로 흔들림 변화를 읽습니다.'
   );
   const [isMeasuringNoise, setIsMeasuringNoise] = useState(false);
   const [isMeasuringVibration, setIsMeasuringVibration] = useState(false);
   const [latestMetering, setLatestMetering] = useState<number | null>(null);
+  const [hasMeasuredNoise, setHasMeasuredNoise] = useState(false);
+  const [hasMeasuredVibration, setHasMeasuredVibration] = useState(false);
+  const [hasRunDiagnosis, setHasRunDiagnosis] = useState(false);
 
   const report = useMemo(
     () =>
@@ -134,19 +152,21 @@ export default function StressDiagnosisScreen() {
         unstableFloor,
       }),
     [
-      species,
-      cageWidthCm,
-      cageDepthCm,
       ambientNoiseDb,
-      vibrationLevel,
-      trafficLevel,
-      hideoutReady,
-      ventilationReady,
+      cageDepthCm,
+      cageWidthCm,
       directSunlight,
+      hideoutReady,
       nearSpeaker,
+      species,
+      trafficLevel,
       unstableFloor,
+      ventilationReady,
+      vibrationLevel,
     ]
   );
+
+  const canRunDiagnosis = hasMeasuredNoise && hasMeasuredVibration;
 
   useEffect(() => {
     if (!isMeasuringNoise || recorderState.metering === undefined) {
@@ -158,17 +178,60 @@ export default function StressDiagnosisScreen() {
 
   useEffect(() => {
     return () => {
-      if (measurementTimeoutRef.current) {
-        clearTimeout(measurementTimeoutRef.current);
+      if (noiseTimeoutRef.current) {
+        clearTimeout(noiseTimeoutRef.current);
+      }
+      if (vibrationTimeoutRef.current) {
+        clearTimeout(vibrationTimeoutRef.current);
       }
       vibrationSubscriptionRef.current?.remove();
     };
   }, []);
 
+  const handlePrepareMeasurement = async () => {
+    try {
+      setPermissionStatusText('권한을 확인하는 중입니다.');
+
+      const microphonePermission = await AudioModule.requestRecordingPermissionsAsync();
+      const microphoneGranted = microphonePermission.granted;
+
+      let motionGranted = true;
+      if (typeof Accelerometer.requestPermissionsAsync === 'function') {
+        const motionPermission = await Accelerometer.requestPermissionsAsync();
+        motionGranted = motionPermission.status === 'granted';
+      }
+
+      setHasAcceptedMeasurementNotice(true);
+      setMicrophoneReady(microphoneGranted);
+      setMotionReady(motionGranted);
+
+      if (microphoneGranted && motionGranted) {
+        setPermissionStatusText('측정 준비가 끝났습니다. 이제 소음과 진동을 각각 측정해 주세요.');
+        return;
+      }
+
+      if (!microphoneGranted && !motionGranted) {
+        setPermissionStatusText('마이크와 센서 권한이 모두 거부되어 실측 진단을 진행할 수 없습니다.');
+        return;
+      }
+
+      if (!microphoneGranted) {
+        setPermissionStatusText('마이크 권한이 없어 소음 측정은 사용할 수 없습니다.');
+        return;
+      }
+
+      setPermissionStatusText('센서 권한이 없어 진동 측정은 사용할 수 없습니다.');
+    } catch (error) {
+      setPermissionStatusText(
+        error instanceof Error ? error.message : '권한 확인 중 문제가 발생했습니다.'
+      );
+    }
+  };
+
   const stopNoiseMeasurement = async () => {
-    if (measurementTimeoutRef.current) {
-      clearTimeout(measurementTimeoutRef.current);
-      measurementTimeoutRef.current = null;
+    if (noiseTimeoutRef.current) {
+      clearTimeout(noiseTimeoutRef.current);
+      noiseTimeoutRef.current = null;
     }
 
     if (recorderState.isRecording) {
@@ -178,65 +241,79 @@ export default function StressDiagnosisScreen() {
     setIsMeasuringNoise(false);
 
     if (latestMetering === null) {
-      setNoiseMeasurementLabel('충분한 소음 데이터를 읽지 못했습니다. 조금 더 큰 주변 소리에서 다시 시도해주세요.');
+      setHasMeasuredNoise(false);
+      setNoiseMeasurementLabel('유효한 소음 값을 읽지 못했습니다. 다시 한 번 측정해 주세요.');
       return;
     }
 
     const estimatedDb = mapMeteringToDb(latestMetering);
     setAmbientNoiseDb(String(estimatedDb));
+    setHasMeasuredNoise(true);
     setNoiseMeasurementLabel(
-      `최근 4초 평균을 기준으로 추정 소음 ${estimatedDb} dB로 반영했습니다. 기기별 오차가 있어 참고용 수치로 사용해주세요.`
+      `최근 4초 기준 간이 추정값은 ${estimatedDb} dB이며, 현재 등급은 ${buildStressDiagnosisReport({
+        species,
+        cageWidthCm: cageWidthCm ? Number(cageWidthCm) : null,
+        cageDepthCm: cageDepthCm ? Number(cageDepthCm) : null,
+        ambientNoiseDb: estimatedDb,
+        vibrationLevel,
+        trafficLevel,
+        hideoutReady,
+        ventilationReady,
+        directSunlight,
+        nearSpeaker,
+        unstableFloor,
+      }).noiseBandLabel}입니다. 절대값보다는 환경 비교용으로 해석해 주세요.`
     );
   };
 
   const handleMeasureNoise = async () => {
-    try {
-      setNoiseMeasurementLabel('마이크 권한과 오디오 모드를 확인한 뒤 4초간 주변 소음을 측정합니다.');
-      setLatestMetering(null);
+    if (!microphoneReady) {
+      setNoiseMeasurementLabel('먼저 측정 준비를 완료하고 마이크 권한을 허용해 주세요.');
+      return;
+    }
 
-      const permission = await AudioModule.requestRecordingPermissionsAsync();
-      if (!permission.granted) {
-        setNoiseMeasurementLabel('마이크 권한이 없어 소음을 측정할 수 없습니다.');
-        return;
-      }
+    try {
+      setLatestMetering(null);
+      setHasMeasuredNoise(false);
+      setHasRunDiagnosis(false);
+      setNoiseMeasurementLabel('4초 동안 주변 소음을 측정하고 있습니다.');
 
       await setAudioModeAsync({
-        playsInSilentMode: true,
         allowsRecording: true,
+        playsInSilentMode: true,
       });
 
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
-
       setIsMeasuringNoise(true);
-      measurementTimeoutRef.current = setTimeout(() => {
+
+      noiseTimeoutRef.current = setTimeout(() => {
         void stopNoiseMeasurement();
       }, MEASUREMENT_MS);
     } catch (error) {
       setIsMeasuringNoise(false);
       setNoiseMeasurementLabel(
-        error instanceof Error ? error.message : '마이크 소음 측정 중 문제가 발생했습니다.'
+        error instanceof Error ? error.message : '소음 측정 중 문제가 발생했습니다.'
       );
     }
   };
 
   const handleMeasureVibration = async () => {
+    if (!motionReady) {
+      setVibrationMeasurementLabel('먼저 측정 준비를 완료하고 센서 권한을 허용해 주세요.');
+      return;
+    }
+
     try {
-      setVibrationMeasurementLabel('가속도 센서를 연결해 4초간 진동을 수집합니다.');
+      setHasMeasuredVibration(false);
+      setHasRunDiagnosis(false);
+      setVibrationMeasurementLabel('4초 동안 진동을 측정하고 있습니다.');
       vibrationSamplesRef.current = [];
 
       const isAvailable = await Accelerometer.isAvailableAsync();
       if (!isAvailable) {
-        setVibrationMeasurementLabel('현재 기기에서는 가속도 센서를 사용할 수 없습니다.');
+        setVibrationMeasurementLabel('이 기기에서는 가속도 센서를 사용할 수 없습니다.');
         return;
-      }
-
-      if (typeof Accelerometer.requestPermissionsAsync === 'function') {
-        const permission = await Accelerometer.requestPermissionsAsync();
-        if (permission.status !== 'granted') {
-          setVibrationMeasurementLabel('센서 권한이 없어 진동을 측정할 수 없습니다.');
-          return;
-        }
       }
 
       vibrationSubscriptionRef.current?.remove();
@@ -249,14 +326,15 @@ export default function StressDiagnosisScreen() {
         vibrationSamplesRef.current.push(deltaFromGravity);
       });
 
-      setTimeout(() => {
+      vibrationTimeoutRef.current = setTimeout(() => {
         vibrationSubscriptionRef.current?.remove();
         vibrationSubscriptionRef.current = null;
         setIsMeasuringVibration(false);
 
         const samples = vibrationSamplesRef.current;
         if (!samples.length) {
-          setVibrationMeasurementLabel('진동 데이터를 읽지 못했습니다. 기기를 고정한 상태로 다시 시도해주세요.');
+          setHasMeasuredVibration(false);
+          setVibrationMeasurementLabel('유효한 진동 값을 읽지 못했습니다. 다시 측정해 주세요.');
           return;
         }
 
@@ -264,16 +342,25 @@ export default function StressDiagnosisScreen() {
         const level = mapVibrationRmsToLevel(rms);
 
         setVibrationLevel(level);
+        setHasMeasuredVibration(true);
         setVibrationMeasurementLabel(
-          `4초간 측정한 진동 RMS를 기준으로 ${level}/10 단계로 반영했습니다. 측정 중에는 기기를 케이지 받침대 가까이에 두는 것이 좋습니다.`
+          `최근 4초 기준 상대 진동 등급은 ${getVibrationBandLabel(level)} (${level}/10)입니다. 기기 간 절대 비교보다는 현재 환경 안에서의 흔들림 정도로 봐주세요.`
         );
       }, MEASUREMENT_MS);
     } catch (error) {
       setIsMeasuringVibration(false);
       setVibrationMeasurementLabel(
-        error instanceof Error ? error.message : '가속도 센서 측정 중 문제가 발생했습니다.'
+        error instanceof Error ? error.message : '진동 측정 중 문제가 발생했습니다.'
       );
     }
+  };
+
+  const handleRunDiagnosis = () => {
+    if (!canRunDiagnosis) {
+      return;
+    }
+
+    setHasRunDiagnosis(true);
   };
 
   const meta = LEVEL_META[report.level];
@@ -287,23 +374,65 @@ export default function StressDiagnosisScreen() {
           </Pressable>
           <AppHeader
             title="스트레스 진단"
-            subtitle="실제 마이크와 가속도 센서로 환경을 측정하고, 논문 기반 소음 구간과 함께 입주 전 위험도를 진단합니다."
+            subtitle="입주 전 케이지 환경을 점검하고, 간이 센서 측정과 체크리스트를 합쳐 위험도를 확인합니다."
           />
         </View>
 
         <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>실측 기반 환경 점검</Text>
+          <Text style={styles.heroTitle}>간이 측정 기반 사전 점검</Text>
           <Text style={styles.heroText}>
-            소음은 마이크 입력 레벨에서 추정 dB로 환산하고, 진동은 스마트폰 MEMS 가속도 센서로 수집합니다.
-            정확한 공인 계측값은 아니므로 발표에서는 간이 진단 도구로 설명하는 것이 가장 안전합니다.
+            소음은 논문에서 자주 언급되는 65 dB, 80 dB, 85 dB, 90 dB 구간을 참고하되, 스마트폰에서는
+            절대 소음계가 아닌 간이 추정값으로 해석합니다.
           </Text>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>측정 전 안내</Text>
+          <View style={styles.noticeCard}>
+            <View style={styles.noticeRow}>
+              <Ionicons name="mic-outline" size={18} color={colors.primaryStrong} />
+              <Text style={styles.noticeText}>마이크로 4초 동안 주변 소음을 간이 측정합니다.</Text>
+            </View>
+            <View style={styles.noticeRow}>
+              <Ionicons name="phone-portrait-outline" size={18} color={colors.primaryStrong} />
+              <Text style={styles.noticeText}>가속도 센서로 4초 동안 진동 변화를 읽습니다.</Text>
+            </View>
+            <View style={styles.noticeRow}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.primaryStrong} />
+              <Text style={styles.noticeText}>
+                결과는 공인 계측기가 아닌 스마트폰 기반 간이 점검입니다. 절대 진단이 아니라 입주 전 위험 신호를
+                확인하는 용도로 사용해 주세요.
+              </Text>
+            </View>
+          </View>
+
+          <Pressable style={styles.prepareButton} onPress={() => void handlePrepareMeasurement()}>
+            <Text style={styles.prepareButtonText}>동의하고 측정 준비하기</Text>
+          </Pressable>
+
+          <View style={styles.statusCard}>
+            <Text style={styles.statusTitle}>현재 상태</Text>
+            <Text style={styles.statusDescription}>{permissionStatusText}</Text>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusBadge, microphoneReady && styles.statusBadgeActive]}>
+                <Text style={[styles.statusBadgeText, microphoneReady && styles.statusBadgeTextActive]}>
+                  마이크 {microphoneReady ? '허용됨' : '대기중'}
+                </Text>
+              </View>
+              <View style={[styles.statusBadge, motionReady && styles.statusBadgeActive]}>
+                <Text style={[styles.statusBadgeText, motionReady && styles.statusBadgeTextActive]}>
+                  센서 {motionReady ? '허용됨' : '대기중'}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>기본 정보</Text>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>동물 종</Text>
+            <Text style={styles.fieldLabel}>동물 종류</Text>
             <TextInput
               value={species}
               onChangeText={setSpecies}
@@ -344,17 +473,19 @@ export default function StressDiagnosisScreen() {
 
           <View style={styles.measureCard}>
             <View style={styles.measureHeader}>
-              <Text style={styles.measureTitle}>주변 소음 측정</Text>
-              <Text style={styles.measureValue}>{ambientNoiseDb || '0'} dB</Text>
+              <Text style={styles.measureTitle}>소음 측정</Text>
+              <Text style={styles.measureValue}>{ambientNoiseDb ? `${ambientNoiseDb} dB` : '미측정'}</Text>
             </View>
             <Text style={styles.helperText}>
-              65dB 미만은 안정, 65dB 이상은 주의 시작, 80dB 이상은 높은 스트레스 가능성, 85dB 이상은 피해야 할
-              고소음 구간으로 판단합니다.
+              측정 후에는 숫자 자체보다 안정, 관찰 필요, 주의 필요, 높음 같은 상대 구간으로 해석하는 것이 더 안전합니다.
             </Text>
             <Pressable
-              style={[styles.measureButton, isMeasuringNoise && styles.measureButtonDisabled]}
+              style={[
+                styles.measureButton,
+                (!microphoneReady || isMeasuringNoise) && styles.measureButtonDisabled,
+              ]}
               onPress={() => void handleMeasureNoise()}
-              disabled={isMeasuringNoise}>
+              disabled={!microphoneReady || isMeasuringNoise}>
               <Text style={styles.measureButtonText}>
                 {isMeasuringNoise ? '소음 측정 중...' : '마이크로 소음 측정'}
               </Text>
@@ -365,28 +496,37 @@ export default function StressDiagnosisScreen() {
           <View style={styles.measureCard}>
             <View style={styles.measureHeader}>
               <Text style={styles.measureTitle}>진동 측정</Text>
-              <Text style={styles.measureValue}>{vibrationLevel}/10</Text>
+              <Text style={styles.measureValue}>
+                {hasMeasuredVibration ? `${getVibrationBandLabel(vibrationLevel)} (${vibrationLevel}/10)` : '미측정'}
+              </Text>
             </View>
             <Text style={styles.helperText}>
-              기기를 케이지 받침대 근처에 두고 측정하면 바닥 흔들림이나 생활 진동을 간이 수준으로 확인할 수 있습니다.
+              진동은 기기별 절대값보다 상대 등급으로 해석합니다. 같은 장소를 여러 번 비교하는 용도로 보는 것이 좋습니다.
             </Text>
             <Pressable
-              style={[styles.measureButton, isMeasuringVibration && styles.measureButtonDisabled]}
+              style={[
+                styles.measureButton,
+                (!motionReady || isMeasuringVibration) && styles.measureButtonDisabled,
+              ]}
               onPress={() => void handleMeasureVibration()}
-              disabled={isMeasuringVibration}>
+              disabled={!motionReady || isMeasuringVibration}>
               <Text style={styles.measureButtonText}>
-                {isMeasuringVibration ? '진동 측정 중...' : '가속도 센서로 진동 측정'}
+                {isMeasuringVibration ? '진동 측정 중...' : '센서로 진동 측정'}
               </Text>
             </Pressable>
             <Text style={styles.measureDescription}>{vibrationMeasurementLabel}</Text>
           </View>
+
+          {!hasAcceptedMeasurementNotice ? (
+            <Text style={styles.inlineNotice}>먼저 위 안내를 읽고 측정 준비를 완료해 주세요.</Text>
+          ) : null}
         </View>
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>환경 체크 항목</Text>
+          <Text style={styles.sectionTitle}>환경 체크</Text>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>사람 이동량</Text>
+            <Text style={styles.fieldLabel}>사람 동선</Text>
             <View style={styles.choiceRow}>
               {([
                 ['low', '적음'],
@@ -410,50 +550,50 @@ export default function StressDiagnosisScreen() {
           </View>
 
           <BooleanField label="은신처가 준비되어 있나요?" value={hideoutReady} onChange={setHideoutReady} />
-          <BooleanField
-            label="케이지 주변 환기 공간이 확보되어 있나요?"
-            value={ventilationReady}
-            onChange={setVentilationReady}
-          />
-          <BooleanField
-            label="직사광선이 직접 들어오나요?"
-            value={directSunlight}
-            onChange={setDirectSunlight}
-          />
-          <BooleanField
-            label="스피커나 TV와 가까운가요?"
-            value={nearSpeaker}
-            onChange={setNearSpeaker}
-          />
-          <BooleanField
-            label="바닥이나 선반이 흔들리나요?"
-            value={unstableFloor}
-            onChange={setUnstableFloor}
-          />
+          <BooleanField label="환기 흐름이 안정적인가요?" value={ventilationReady} onChange={setVentilationReady} />
+          <BooleanField label="직사광선이 직접 들어오나요?" value={directSunlight} onChange={setDirectSunlight} />
+          <BooleanField label="TV나 스피커 근처인가요?" value={nearSpeaker} onChange={setNearSpeaker} />
+          <BooleanField label="바닥이나 선반이 흔들리나요?" value={unstableFloor} onChange={setUnstableFloor} />
         </View>
 
-        <Pressable style={styles.diagnosisButton} onPress={() => setHasRunDiagnosis(true)}>
-          <Text style={styles.diagnosisButtonText}>진단 리포트 보기</Text>
+        <Pressable
+          style={[styles.diagnosisButton, !canRunDiagnosis && styles.diagnosisButtonDisabled]}
+          onPress={handleRunDiagnosis}
+          disabled={!canRunDiagnosis}>
+          <Text style={styles.diagnosisButtonText}>
+            {canRunDiagnosis ? '실측 결과로 진단 보기' : '소음과 진동 측정을 완료해 주세요'}
+          </Text>
         </Pressable>
+
+        {!canRunDiagnosis ? (
+          <Text style={styles.inlineNotice}>
+            실측 기반 진단은 소음 측정과 진동 측정을 모두 마친 뒤에만 열립니다.
+          </Text>
+        ) : null}
 
         {hasRunDiagnosis ? (
           <View style={styles.reportCard}>
             <View style={styles.reportHeader}>
-              <View style={[styles.levelBadge, { backgroundColor: meta.bg }]}>
+              <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
                 <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
               </View>
-              <Text style={styles.scoreText}>위험 점수 {report.score}점</Text>
+              <Text style={styles.scoreText}>총점 {report.score}점</Text>
+            </View>
+
+            <View style={styles.noticePill}>
+              <Ionicons name="analytics-outline" size={16} color={colors.primaryStrong} />
+              <Text style={styles.noticePillText}>{report.measurementNotice}</Text>
             </View>
 
             <View style={styles.noiseBandCard}>
-              <Text style={styles.noiseBandTitle}>소음 판단 구간</Text>
+              <Text style={styles.noiseBandTitle}>소음 추정 등급</Text>
               <Text style={styles.noiseBandValue}>{report.noiseBandLabel}</Text>
             </View>
 
             <Text style={styles.reportSummary}>{report.summary}</Text>
 
             <View style={styles.reportSection}>
-              <Text style={styles.reportSectionTitle}>주요 체크 포인트</Text>
+              <Text style={styles.reportSectionTitle}>주요 위험 요인</Text>
               {report.highlights.map((item) => (
                 <View key={item} style={styles.reportRow}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.primaryStrong} />
@@ -463,7 +603,7 @@ export default function StressDiagnosisScreen() {
             </View>
 
             <View style={styles.reportSection}>
-              <Text style={styles.reportSectionTitle}>추천 조치</Text>
+              <Text style={styles.reportSectionTitle}>권장 조치</Text>
               {report.recommendations.map((item) => (
                 <View key={item} style={styles.reportRow}>
                   <Ionicons name="checkmark-circle-outline" size={18} color={colors.primaryStrong} />
@@ -525,6 +665,76 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
+  noticeCard: {
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    gap: 12,
+  },
+  noticeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textMuted,
+  },
+  prepareButton: {
+    minHeight: 50,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  prepareButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  statusCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    gap: 10,
+  },
+  statusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  statusDescription: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textMuted,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  statusBadgeActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: '#B9D8CC',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  statusBadgeTextActive: {
+    color: colors.primaryStrong,
+  },
   fieldBlock: {
     gap: 8,
   },
@@ -583,30 +793,6 @@ const styles = StyleSheet.create({
   choiceChipTextActive: {
     color: colors.primaryStrong,
   },
-  scaleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  scaleValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primaryStrong,
-  },
-  scaleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  scaleDot: {
-    flex: 1,
-    height: 12,
-    borderRadius: 999,
-    backgroundColor: colors.backgroundAccent,
-  },
-  scaleDotActive: {
-    backgroundColor: colors.accent,
-  },
   measureCard: {
     padding: 16,
     borderRadius: 20,
@@ -637,7 +823,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   measureButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.55,
   },
   measureButtonText: {
     fontSize: 14,
@@ -656,10 +842,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: colors.primary,
   },
+  diagnosisButtonDisabled: {
+    opacity: 0.5,
+  },
   diagnosisButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  inlineNotice: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
   },
   reportCard: {
     padding: 18,
@@ -688,6 +882,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.text,
+  },
+  noticePill: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+  },
+  noticePillText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
   },
   noiseBandCard: {
     padding: 14,

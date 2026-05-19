@@ -361,7 +361,7 @@ export default function CommunityScreen() {
       <View style={styles.headerRow}>
         <Pressable
           style={styles.menuButton}
-          onPress={() => router.push('/stress-check')}>
+          onPress={() => router.push('/stress-check' as never)}>
           <Ionicons name="menu" size={22} color={colors.text} />
         </Pressable>
         <View style={styles.headerContent}>

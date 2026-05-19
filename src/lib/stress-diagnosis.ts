@@ -21,6 +21,7 @@ export type StressDiagnosisReport = {
   highlights: string[];
   recommendations: string[];
   noiseBandLabel: string;
+  measurementNotice: string;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -47,7 +48,7 @@ function getCageSizePenalty(species: string, width: number | null, depth: number
     return area < 4500 ? 10 : area < 5600 ? 5 : 0;
   }
 
-  if (normalized.includes('guinea') || normalized.includes('기니')) {
+  if (normalized.includes('guinea') || normalized.includes('기니피그')) {
     return area < 7000 ? 10 : area < 9000 ? 5 : 0;
   }
 
@@ -57,51 +58,49 @@ function getCageSizePenalty(species: string, width: number | null, depth: number
 function getNoiseBand(noiseDb: number) {
   if (noiseDb >= 90) {
     return {
-      label: '90 dB 이상',
+      label: '매우 높음',
       penalty: 36,
-      highlight: '90 dB 이상의 소음은 급성 스트레스 반응 위험이 높은 구간으로 판단했습니다.',
-      recommendation: '즉시 더 조용한 위치로 옮기거나 소음원을 차단한 뒤 다시 측정해주세요.',
+      highlight: '스마트폰 기준으로 매우 큰 소음이 감지되었습니다. 문헌상 급성 스트레스 위험 구간에 가깝습니다.',
+      recommendation: '즉시 소음원을 줄이고 더 조용한 위치로 케이지를 옮기는 것을 권장합니다.',
     };
   }
 
   if (noiseDb >= 85) {
     return {
-      label: '85~89 dB',
+      label: '높음',
       penalty: 28,
-      highlight: '85 dB 이상의 지속 소음은 동물복지와 청각 건강 측면에서 피해야 할 고소음 구간입니다.',
-      recommendation: '장시간 노출을 피하고, 스피커·가전·작업 소음과 거리를 두는 것이 좋습니다.',
+      highlight: '고소음 구간에 가까운 환경으로 보입니다. 장시간 유지되면 복지 측면에서 부담이 될 수 있습니다.',
+      recommendation: 'TV, 스피커, 청소기, 환풍기 같은 반복 소음원을 먼저 줄여주세요.',
     };
   }
 
   if (noiseDb >= 80) {
     return {
-      label: '80~84 dB',
+      label: '주의 필요',
       penalty: 20,
-      highlight: '80 dB 수준의 소음은 설치류의 각성 및 스트레스 반응 가능성이 커지는 구간으로 보았습니다.',
-      recommendation: '케이지 위치를 조용한 구역으로 조정하고, 반복적으로 발생하는 소음을 줄여주세요.',
+      highlight: '상대적으로 높은 소음이 감지되었습니다. 반복 노출 시 스트레스 가능성이 커질 수 있습니다.',
+      recommendation: '조용한 위치로 옮기고, 소음이 큰 시간대가 반복되는지 확인해 주세요.',
     };
   }
 
   if (noiseDb >= 65) {
     return {
-      label: '65~79 dB',
+      label: '관찰 필요',
       penalty: 10,
-      highlight: '65 dB 이상의 만성 소음은 장기적으로 생리·행동 변화에 영향을 줄 가능성이 있습니다.',
-      recommendation: '입주 전에는 65 dB 미만의 비교적 안정적인 배경 소음을 목표로 점검해주세요.',
+      highlight: '배경 소음이 아주 낮은 편은 아닙니다. 누적 스트레스 관찰이 필요한 구간입니다.',
+      recommendation: '가능하면 65 dB 미만의 더 조용한 환경을 유지해 주세요.',
     };
   }
 
   return {
-    label: '65 dB 미만',
+    label: '안정',
     penalty: 0,
-    highlight: '현재 소음 수준은 비교적 안정적인 배경 소음 구간으로 판단했습니다.',
-    recommendation: '입주 후에도 동일한 시간대의 소음을 다시 한 번 측정해 변화가 없는지 확인해주세요.',
+    highlight: '현재 소음은 비교적 안정적인 편으로 보입니다.',
+    recommendation: '현재 환경을 유지하면서 특정 시간대의 일시적 소음만 추가 점검해 주세요.',
   };
 }
 
-export function buildStressDiagnosisReport(
-  input: StressDiagnosisInput
-): StressDiagnosisReport {
+export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressDiagnosisReport {
   const highlights: string[] = [];
   const recommendations: string[] = [];
 
@@ -115,65 +114,70 @@ export function buildStressDiagnosisReport(
   const cagePenalty = getCageSizePenalty(input.species, input.cageWidthCm, input.cageDepthCm);
   score += cagePenalty;
   if (cagePenalty >= 8) {
-    highlights.push('케이지 바닥 면적이 현재 종 기준으로 다소 좁게 평가되었습니다.');
-    recommendations.push('바닥 면적을 넓히거나 내부 배치를 단순화해 이동 공간을 확보해주세요.');
+    highlights.push('케이지 바닥 면적이 현재 사육 환경 기준에서 다소 좁을 가능성이 있습니다.');
+    recommendations.push('동물 종에 맞는 최소 활동 공간과 은신 공간이 확보되는지 다시 점검해 주세요.');
   }
 
   const vibrationPenalty = clamp(input.vibrationLevel, 0, 10) * 1.8;
   score += vibrationPenalty;
   if (input.vibrationLevel >= 7) {
-    highlights.push('진동 체감이 높아 예민한 개체에게 불안 요소가 될 수 있습니다.');
-    recommendations.push('스마트폰 가속도 센서 측정을 병행하고, 흔들림이 적은 받침대로 바꿔주세요.');
+    highlights.push('진동 수준이 높아 바닥 충격이나 주변 기기 흔들림이 스트레스 요인이 될 수 있습니다.');
+    recommendations.push('단단하고 평평한 바닥으로 옮기고, 진동이 전달되는 가전제품 근처는 피해주세요.');
+  } else if (input.vibrationLevel >= 4) {
+    highlights.push('약한 진동이 계속 전달될 가능성이 있습니다. 설치 위치를 한 번 더 확인하면 좋습니다.');
+    recommendations.push('선반 흔들림이나 문 여닫이 진동이 전달되지 않는지 확인해 주세요.');
   }
 
   const trafficPenalty = getTrafficPenalty(input.trafficLevel);
   score += trafficPenalty;
   if (input.trafficLevel !== 'low') {
-    highlights.push('사람 이동량이 잦은 위치로 판단되었습니다.');
-    recommendations.push('복도, 출입문 근처보다 시선과 동선이 덜 겹치는 위치가 유리합니다.');
+    highlights.push('사람 동선이 잦아 휴식 시간에도 외부 자극이 계속 들어올 수 있습니다.');
+    recommendations.push('지나가는 사람이 적고 갑작스러운 움직임이 덜한 위치를 우선 고려해 주세요.');
   }
 
   if (!input.hideoutReady) {
     score += 12;
-    highlights.push('숨을 수 있는 은신처가 준비되지 않았습니다.');
-    recommendations.push('입주 전 은신처를 최소 1개 이상 배치해주세요.');
+    highlights.push('은신처가 없어 불안 상황에서 숨을 수 있는 공간이 부족합니다.');
+    recommendations.push('최소 1개 이상의 은신처를 넣고 내부가 너무 밝지 않도록 조정해 주세요.');
   }
 
   if (!input.ventilationReady) {
     score += 8;
-    highlights.push('환기 상태가 충분하지 않을 가능성이 있습니다.');
-    recommendations.push('통풍이 막히지 않도록 케이지 주변 여유 공간을 확보해주세요.');
+    highlights.push('환기 흐름이 답답하면 열과 냄새가 축적되어 환경 부담이 커질 수 있습니다.');
+    recommendations.push('직접적인 찬바람은 피하되 공기 순환이 되는 위치인지 확인해 주세요.');
   }
 
   if (input.directSunlight) {
     score += 8;
-    highlights.push('직사광선 노출 가능성이 있습니다.');
-    recommendations.push('직사광선이 바로 닿지 않는 위치로 조정해주세요.');
+    highlights.push('직사광선 노출은 온도 상승과 과도한 자극으로 이어질 수 있습니다.');
+    recommendations.push('직사광선이 직접 닿지 않는 위치로 옮기거나 차광을 고려해 주세요.');
   }
 
   if (input.nearSpeaker) {
     score += 10;
-    highlights.push('스피커 또는 TV와 가까운 위치입니다.');
-    recommendations.push('갑작스러운 저음 진동과 큰 소리를 피할 수 있도록 거리를 두는 것이 좋습니다.');
+    highlights.push('스피커, TV, 게임기 근처는 고주파와 반복 소음 노출 위험이 큽니다.');
+    recommendations.push('전자기기와 거리를 두고, 진동과 소음이 적은 장소를 우선 선택해 주세요.');
   }
 
   if (input.unstableFloor) {
     score += 10;
-    highlights.push('케이지를 둔 바닥 또는 선반의 흔들림 가능성이 있습니다.');
-    recommendations.push('수평이 맞고 흔들림이 적은 바닥이나 가구 위로 재배치해주세요.');
+    highlights.push('케이지가 흔들리는 바닥이나 선반 위에 있으면 지속 진동이 전달될 수 있습니다.');
+    recommendations.push('더 단단하고 평평한 바닥으로 옮기고 받침대 흔들림을 줄여주세요.');
   }
 
   const roundedScore = Math.round(score);
   let level: StressDiagnosisReport['level'] = 'stable';
   let summary =
-    '현재 환경은 비교적 안정적으로 보이며, 입주 전 기본 조건이 잘 갖춰져 있습니다.';
+    '현재 환경은 비교적 안정적으로 보입니다. 다만 시간대별 소음과 진동 변화를 한 번 더 점검하면 좋습니다.';
 
   if (roundedScore >= 55) {
     level = 'warning';
-    summary = '논문 기반 소음 기준과 환경 체크를 종합했을 때, 입주 전 스트레스 위험이 높은 편입니다.';
+    summary =
+      '현재 환경은 입주 전에 우선 조정이 필요한 항목이 많습니다. 소음, 진동, 배치 조건을 먼저 손보는 편이 좋습니다.';
   } else if (roundedScore >= 28) {
     level = 'caution';
-    summary = '일부 스트레스 요인이 보여 보완 후 입주시키는 것이 더 안전한 환경으로 판단됩니다.';
+    summary =
+      '몇 가지 스트레스 위험 요소가 보입니다. 바로 위험하다고 단정할 수는 없지만, 입주 전 보완을 권장합니다.';
   }
 
   return {
@@ -183,5 +187,7 @@ export function buildStressDiagnosisReport(
     highlights,
     recommendations,
     noiseBandLabel: noiseBand.label,
+    measurementNotice:
+      '이 결과는 스마트폰 마이크와 센서를 이용한 간이 측정 기반입니다. 절대값보다는 환경 비교와 사전 점검용으로 해석해 주세요.',
   };
 }
