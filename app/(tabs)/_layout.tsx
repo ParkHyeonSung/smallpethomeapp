@@ -100,6 +100,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="simulation"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

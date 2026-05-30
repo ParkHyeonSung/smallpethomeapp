@@ -10,7 +10,7 @@ import {
 } from 'expo-audio';
 import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
@@ -20,6 +20,7 @@ import {
   StressDiagnosisReport,
   TrafficLevel,
 } from '@/src/lib/stress-diagnosis';
+import { saveStressReport } from '@/src/lib/stress-reports';
 
 const LEVEL_META: Record<
   StressDiagnosisReport['level'],
@@ -96,6 +97,7 @@ function getVibrationBandLabel(level: number) {
 }
 
 export default function StressDiagnosisScreen() {
+  const isWeb = Platform.OS === 'web';
   const audioRecorder = useAudioRecorder(recorderOptions);
   const recorderState = useAudioRecorderState(audioRecorder, 150);
 
@@ -135,6 +137,7 @@ export default function StressDiagnosisScreen() {
   const [hasMeasuredNoise, setHasMeasuredNoise] = useState(false);
   const [hasMeasuredVibration, setHasMeasuredVibration] = useState(false);
   const [hasRunDiagnosis, setHasRunDiagnosis] = useState(false);
+  const [isSavingReport, setIsSavingReport] = useState(false);
 
   const report = useMemo(
     () =>
@@ -189,6 +192,11 @@ export default function StressDiagnosisScreen() {
   }, []);
 
   const handlePrepareMeasurement = async () => {
+    if (isWeb) {
+      Alert.alert('모바일 전용 기능', '스트레스 진단은 휴대폰 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+
     try {
       setPermissionStatusText('권한을 확인하는 중입니다.');
 
@@ -267,6 +275,11 @@ export default function StressDiagnosisScreen() {
   };
 
   const handleMeasureNoise = async () => {
+    if (isWeb) {
+      Alert.alert('모바일 전용 기능', '소음 측정은 휴대폰 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+
     if (!microphoneReady) {
       setNoiseMeasurementLabel('먼저 측정 준비를 완료하고 마이크 권한을 허용해 주세요.');
       return;
@@ -299,6 +312,11 @@ export default function StressDiagnosisScreen() {
   };
 
   const handleMeasureVibration = async () => {
+    if (isWeb) {
+      Alert.alert('모바일 전용 기능', '진동 측정은 휴대폰 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+
     if (!motionReady) {
       setVibrationMeasurementLabel('먼저 측정 준비를 완료하고 센서 권한을 허용해 주세요.');
       return;
@@ -356,6 +374,11 @@ export default function StressDiagnosisScreen() {
   };
 
   const handleRunDiagnosis = () => {
+    if (isWeb) {
+      Alert.alert('모바일 전용 기능', '스트레스 진단은 휴대폰 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+
     if (!canRunDiagnosis) {
       return;
     }
@@ -363,7 +386,70 @@ export default function StressDiagnosisScreen() {
     setHasRunDiagnosis(true);
   };
 
+  const handleSaveReport = async () => {
+    if (isWeb) {
+      Alert.alert('모바일 전용 기능', '스트레스 진단 결과 저장은 휴대폰 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+
+    try {
+      setIsSavingReport(true);
+
+      await saveStressReport({
+        diagnosisInput: {
+          species,
+          cageWidthCm: cageWidthCm ? Number(cageWidthCm) : null,
+          cageDepthCm: cageDepthCm ? Number(cageDepthCm) : null,
+          ambientNoiseDb: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
+          vibrationLevel,
+          trafficLevel,
+          hideoutReady,
+          ventilationReady,
+          directSunlight,
+          nearSpeaker,
+          unstableFloor,
+        },
+        report,
+      });
+
+      Alert.alert('저장 완료', '진단 결과가 저장되었습니다.');
+    } catch (error) {
+      Alert.alert(
+        '저장 실패',
+        error instanceof Error ? error.message : '진단 결과를 저장하지 못했습니다.'
+      );
+    } finally {
+      setIsSavingReport(false);
+    }
+  };
+
   const meta = LEVEL_META[report.level];
+
+  if (isWeb) {
+    return (
+      <ScreenContainer>
+        <View style={styles.mobileOnlyContent}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+          </Pressable>
+
+          <View style={styles.mobileOnlyCard}>
+            <Ionicons name="phone-portrait-outline" size={34} color={colors.primaryStrong} />
+            <Text style={styles.mobileOnlyTitle}>모바일 앱에서만 사용할 수 있어요</Text>
+            <Text style={styles.mobileOnlyText}>
+              스트레스 진단은 휴대폰의 마이크와 가속도 센서를 사용하므로 PC 웹에서는 실행할 수 없습니다.
+              Expo Go 또는 모바일 빌드에서 다시 시도해 주세요.
+            </Text>
+            <Pressable
+              style={styles.recordsButton}
+              onPress={() => router.push('/stress-reports' as never)}>
+              <Text style={styles.recordsButtonText}>저장된 진단 기록 보기</Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer>
@@ -384,6 +470,12 @@ export default function StressDiagnosisScreen() {
             소음은 논문에서 자주 언급되는 65 dB, 80 dB, 85 dB, 90 dB 구간을 참고하되, 스마트폰에서는
             절대 소음계가 아닌 간이 추정값으로 해석합니다.
           </Text>
+          <Pressable
+            style={styles.heroRecordsButton}
+            onPress={() => router.push('/stress-reports' as never)}>
+            <Ionicons name="document-text-outline" size={17} color="#FFFFFF" />
+            <Text style={styles.heroRecordsButtonText}>진단 기록 보기</Text>
+          </Pressable>
         </View>
 
         <View style={styles.sectionCard}>
@@ -611,6 +703,15 @@ export default function StressDiagnosisScreen() {
                 </View>
               ))}
             </View>
+
+            <Pressable
+              style={[styles.saveReportButton, isSavingReport && styles.saveReportButtonDisabled]}
+              onPress={() => void handleSaveReport()}
+              disabled={isSavingReport}>
+              <Text style={styles.saveReportButtonText}>
+                {isSavingReport ? '저장 중...' : '진단 결과 저장하기'}
+              </Text>
+            </Pressable>
           </View>
         ) : null}
       </ScrollView>
@@ -619,6 +720,46 @@ export default function StressDiagnosisScreen() {
 }
 
 const styles = StyleSheet.create({
+  mobileOnlyContent: {
+    flex: 1,
+    padding: 20,
+    gap: 18,
+    justifyContent: 'center',
+  },
+  mobileOnlyCard: {
+    alignItems: 'center',
+    gap: 14,
+    padding: 24,
+    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mobileOnlyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  mobileOnlyText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  recordsButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+  },
+  recordsButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   scrollContent: {
     padding: 20,
     gap: 16,
@@ -651,6 +792,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: '#E5F0EC',
+  },
+  heroRecordsButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  heroRecordsButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   sectionCard: {
     padding: 18,
@@ -936,5 +1094,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: colors.textMuted,
+  },
+  saveReportButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: colors.primaryStrong,
+  },
+  saveReportButtonDisabled: {
+    opacity: 0.7,
+  },
+  saveReportButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

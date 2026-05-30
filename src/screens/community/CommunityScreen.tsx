@@ -38,6 +38,7 @@ export default function CommunityScreen() {
   const isDesktopWeb = Platform.OS === 'web' && width >= 1024;
   const isFocused = useIsFocused();
   const commentSheetY = useRef(new Animated.Value(COMMENT_SHEET_Y)).current;
+  const featureMenuX = useRef(new Animated.Value(-340)).current;
   const feedScrollRefs = useRef<Record<string, ScrollView | null>>({});
 
   const [posts, setPosts] = useState<PostItem[]>([]);
@@ -57,6 +58,7 @@ export default function CommunityScreen() {
   const [editingCommentDraft, setEditingCommentDraft] = useState('');
   const [isSubmittingCommentEdit, setIsSubmittingCommentEdit] = useState(false);
   const [menuCommentId, setMenuCommentId] = useState<string | null>(null);
+  const [isFeatureMenuVisible, setIsFeatureMenuVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const panResponder = useRef(
@@ -356,12 +358,41 @@ export default function CommunityScreen() {
     setActiveImageIndexByPostId((prev) => ({ ...prev, [postId]: nextIndex }));
   };
 
+  const openFeatureMenu = () => {
+    setIsFeatureMenuVisible(true);
+    featureMenuX.setValue(-340);
+    Animated.timing(featureMenuX, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeFeatureMenu = () => {
+    Animated.timing(featureMenuX, {
+      toValue: -340,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => setIsFeatureMenuVisible(false));
+  };
+
+  const openFeatureScreen = (href: '/stress-check' | '/(tabs)/simulation') => {
+    Animated.timing(featureMenuX, {
+      toValue: -340,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsFeatureMenuVisible(false);
+      router.push(href as never);
+    });
+  };
+
   return (
     <ScreenContainer scroll contentStyle={[styles.screenContent, isDesktopWeb && styles.screenContentDesktop]}>
       <View style={styles.headerRow}>
         <Pressable
           style={styles.menuButton}
-          onPress={() => router.push('/stress-check' as never)}>
+          onPress={openFeatureMenu}>
           <Ionicons name="menu" size={22} color={colors.text} />
         </Pressable>
         <View style={styles.headerContent}>
@@ -586,6 +617,54 @@ export default function CommunityScreen() {
         );
       })}
 
+      <Modal
+        transparent
+        animationType="fade"
+        visible={isFeatureMenuVisible}
+        onRequestClose={closeFeatureMenu}>
+        <View style={styles.featureMenuOverlay}>
+          <Pressable style={styles.featureMenuBackdrop} onPress={closeFeatureMenu} />
+          <Animated.View
+            style={[
+              styles.featureMenuDrawer,
+              isDesktopWeb && styles.featureMenuDrawerDesktop,
+              { transform: [{ translateX: featureMenuX }] },
+            ]}>
+            <View style={styles.featureMenuHeader}>
+              <View>
+                <Text style={styles.featureMenuTitle}>기능 메뉴</Text>
+                <Text style={styles.featureMenuSubtitle}>필요한 도구를 선택해 주세요.</Text>
+              </View>
+              <Pressable style={styles.featureMenuCloseButton} onPress={closeFeatureMenu}>
+                <Ionicons name="close" size={21} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <Pressable style={styles.featureMenuItem} onPress={() => openFeatureScreen('/stress-check')}>
+              <View style={styles.featureMenuIcon}>
+                <Ionicons name="pulse-outline" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.featureMenuTextBox}>
+                <Text style={styles.featureMenuItemTitle}>스트레스 진단</Text>
+                <Text style={styles.featureMenuItemDescription}>모바일 앱에서 소음과 진동을 측정해요.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+
+            <Pressable style={styles.featureMenuItem} onPress={() => openFeatureScreen('/(tabs)/simulation')}>
+              <View style={styles.featureMenuIcon}>
+                <Ionicons name="cube-outline" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.featureMenuTextBox}>
+                <Text style={styles.featureMenuItemTitle}>3D 시뮬레이션</Text>
+                <Text style={styles.featureMenuItemDescription}>케이지 크기와 배치물을 직접 조정해요.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
+
       <Modal transparent animationType="none" visible={commentSheetPostId !== null} onRequestClose={closeCommentSheet}>
         <View style={styles.sheetOverlay}>
           <Pressable style={styles.sheetBackdrop} onPress={closeCommentSheet} />
@@ -762,6 +841,92 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flex: 1,
+  },
+  featureMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 12, 10, 0.25)',
+  },
+  featureMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  featureMenuDrawer: {
+    width: '86%',
+    maxWidth: 360,
+    height: '100%',
+    borderTopRightRadius: 24,
+    borderBottomRightRadius: 24,
+    backgroundColor: colors.surface,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'web' ? 34 : 56,
+    paddingBottom: 24,
+    gap: 10,
+    shadowColor: '#102019',
+    shadowOffset: { width: 14, height: 0 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  featureMenuDrawerDesktop: {
+    maxWidth: 340,
+  },
+  featureMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  featureMenuTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  featureMenuSubtitle: {
+    marginTop: -4,
+    marginBottom: 4,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+  },
+  featureMenuCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  featureMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+    padding: 12,
+  },
+  featureMenuIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLight,
+  },
+  featureMenuTextBox: {
+    flex: 1,
+    gap: 2,
+  },
+  featureMenuItemTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  featureMenuItemDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textMuted,
   },
   refreshButton: {
     alignSelf: 'flex-end',

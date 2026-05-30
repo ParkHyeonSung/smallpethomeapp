@@ -184,6 +184,19 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      <Pressable
+        style={styles.stressReportsButton}
+        onPress={() => router.push('/stress-reports' as never)}>
+        <View style={styles.stressReportsIcon}>
+          <Ionicons name="document-text-outline" size={20} color={colors.primaryStrong} />
+        </View>
+        <View style={styles.stressReportsTextWrap}>
+          <Text style={styles.stressReportsTitle}>스트레스 진단 기록</Text>
+          <Text style={styles.stressReportsSubtitle}>저장한 측정 결과와 점수를 다시 확인합니다.</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
+
       <View style={styles.feedPanel}>
         {isLoadingPosts ? (
           <View style={styles.stateWrap}>
@@ -321,6 +334,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.primaryStrong,
+  },
+  stressReportsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: '#C9DED5',
+  },
+  stressReportsIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  stressReportsTextWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  stressReportsTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.primaryStrong,
+  },
+  stressReportsSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
   },
   feedPanel: {
     padding: 18,

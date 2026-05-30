@@ -165,7 +165,7 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
     recommendations.push('더 단단하고 평평한 바닥으로 옮기고 받침대 흔들림을 줄여주세요.');
   }
 
-  const roundedScore = Math.round(score);
+  const roundedScore = clamp(Math.round(score), 0, 100);
   let level: StressDiagnosisReport['level'] = 'stable';
   let summary =
     '현재 환경은 비교적 안정적으로 보입니다. 다만 시간대별 소음과 진동 변화를 한 번 더 점검하면 좋습니다.';
