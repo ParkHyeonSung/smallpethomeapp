@@ -7,7 +7,6 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import {
@@ -109,7 +108,9 @@ export default function LoginScreen() {
         } catch (error) {
           setFeedbackTone('error');
           setFeedbackMessage(
-            error instanceof Error ? error.message : '프로필 저장 중 문제가 발생했어요.'
+            error instanceof Error
+              ? error.message
+              : '프로필 정보를 불러오는 중 문제가 발생했어요.'
           );
         }
       })();
@@ -121,13 +122,6 @@ export default function LoginScreen() {
       subscription.unsubscribe();
     };
   }, []);
-
-  const resetInputs = () => {
-    setLoginId('');
-    setPassword('');
-    setNickname('');
-    setFeedbackMessage('');
-  };
 
   const setErrorFeedback = (error: unknown) => {
     setFeedbackTone('error');
@@ -191,7 +185,7 @@ export default function LoginScreen() {
       const result = await WebBrowser.openAuthSessionAsync(data.url, nativeRedirectTo);
 
       if (result.type !== 'success' && result.type !== 'cancel') {
-        throw new Error('Google 로그인 흐름을 완료하지 못했어요.');
+        throw new Error('Google 로그인 절차를 완료하지 못했어요.');
       }
     } catch (error) {
       setErrorFeedback(error);
@@ -216,7 +210,7 @@ export default function LoginScreen() {
 
         await upsertProfileForCredentials({ nickname });
         setFeedbackTone('success');
-        setFeedbackMessage('회원가입이 완료되어 바로 로그인했어요.');
+        setFeedbackMessage('회원가입이 완료되어 바로 로그인되었어요.');
         router.replace('/(tabs)');
         return;
       }
@@ -235,131 +229,114 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScreenContainer contentStyle={styles.container}>
-      <View style={styles.hero}>
-        <Text style={styles.badge}>Small Pet Home</Text>
-        <AppHeader
-          title="소동물 집 정보를 함께 나누세요"
-          subtitle="Google 로그인도 가능하고, 테스트용 계정은 아이디와 비밀번호로 바로 만들 수 있어요."
-        />
-      </View>
+    <ScreenContainer scroll contentStyle={styles.container}>
+      <View style={styles.authPanel}>
+        <Text style={styles.screenTitle}>{mode === 'signup' ? '회원가입' : '로그인'}</Text>
 
-      <View style={styles.modeRow}>
-        <Pressable
-          style={[styles.modeChip, mode === 'login' && styles.modeChipActive]}
-          onPress={() => {
-            setMode('login');
-            setNickname('');
-            setFeedbackMessage('');
-          }}>
-          <Text style={[styles.modeChipText, mode === 'login' && styles.modeChipTextActive]}>
-            아이디 로그인
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.modeChip, mode === 'signup' && styles.modeChipActive]}
-          onPress={() => {
-            setMode('signup');
-            setFeedbackMessage('');
-          }}>
-          <Text style={[styles.modeChipText, mode === 'signup' && styles.modeChipTextActive]}>
-            회원가입
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          {mode === 'signup' ? '아이디로 회원가입' : '아이디로 로그인'}
-        </Text>
-        <Text style={styles.cardDescription}>
-          {mode === 'signup'
-            ? '닉네임, 아이디, 비밀번호를 입력하면 테스트용 계정과 프로필이 함께 만들어져요.'
-            : '가입한 아이디와 비밀번호로 바로 로그인할 수 있어요.'}
-        </Text>
-
-        {feedbackMessage ? (
-          <View
-            style={[
-              styles.feedbackBox,
-              feedbackTone === 'error' ? styles.feedbackError : styles.feedbackSuccess,
-            ]}>
-            <Text
-              style={[
-                styles.feedbackText,
-                feedbackTone === 'error' ? styles.feedbackErrorText : styles.feedbackSuccessText,
-              ]}>
-              {feedbackMessage}
+        <View style={styles.modeRow}>
+          <Pressable
+            style={[styles.modeChip, mode === 'login' && styles.modeChipActive]}
+            onPress={() => {
+              setMode('login');
+              setNickname('');
+              setFeedbackMessage('');
+            }}>
+            <Text style={[styles.modeChipText, mode === 'login' && styles.modeChipTextActive]}>
+              로그인
             </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeChip, mode === 'signup' && styles.modeChipActive]}
+            onPress={() => {
+              setMode('signup');
+              setFeedbackMessage('');
+            }}>
+            <Text style={[styles.modeChipText, mode === 'signup' && styles.modeChipTextActive]}>
+              회원가입
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          {feedbackMessage ? (
+            <View
+              style={[
+                styles.feedbackBox,
+                feedbackTone === 'error' ? styles.feedbackError : styles.feedbackSuccess,
+              ]}>
+              <Text
+                style={[
+                  styles.feedbackText,
+                  feedbackTone === 'error' ? styles.feedbackErrorText : styles.feedbackSuccessText,
+                ]}>
+                {feedbackMessage}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.formGroup}>
+            {mode === 'signup' ? (
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>닉네임</Text>
+                <TextInput
+                  value={nickname}
+                  onChangeText={setNickname}
+                  placeholder="프로필에 표시될 이름"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>아이디</Text>
+              <TextInput
+                value={loginId}
+                onChangeText={setLoginId}
+                placeholder="영문, 숫자 조합 4자 이상"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>비밀번호</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="비밀번호 입력"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                style={styles.input}
+              />
+            </View>
           </View>
-        ) : null}
 
-        {mode === 'signup' ? (
-          <TextInput
-            value={nickname}
-            onChangeText={setNickname}
-            placeholder="닉네임"
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-          />
-        ) : null}
+          <Pressable
+            style={[styles.primaryButton, isCredentialsLoading && styles.primaryButtonDisabled]}
+            onPress={() => void handleCredentialsSubmit()}
+            disabled={isCredentialsLoading}>
+            <Text style={styles.primaryButtonText}>
+              {isCredentialsLoading
+                ? mode === 'signup'
+                  ? '가입 중...'
+                  : '로그인 중...'
+                : mode === 'signup'
+                  ? '회원가입하기'
+                  : '로그인하기'}
+            </Text>
+          </Pressable>
+        </View>
 
-        <TextInput
-          value={loginId}
-          onChangeText={setLoginId}
-          placeholder="아이디"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="비밀번호"
-          placeholderTextColor={colors.textMuted}
-          secureTextEntry
-          style={styles.input}
-        />
-
-        <Pressable
-          style={[styles.primaryButton, isCredentialsLoading && styles.primaryButtonDisabled]}
-          onPress={() => void handleCredentialsSubmit()}
-          disabled={isCredentialsLoading}>
-          <Text style={styles.primaryButtonText}>
-            {isCredentialsLoading
-              ? mode === 'signup'
-                ? '가입 중...'
-                : '로그인 중...'
-              : mode === 'signup'
-                ? '회원가입하기'
-                : '로그인하기'}
-          </Text>
-        </Pressable>
-
-        <Text style={styles.caption}>
-          아이디는 영문 소문자, 숫자, 점(.), 밑줄(_), 하이픈(-) 조합으로 4자 이상을 권장해요.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Google로 시작하기</Text>
-        <Text style={styles.cardDescription}>
-          Google 계정으로 로그인하면 이름과 프로필 정보가 자동으로 반영돼요.
-        </Text>
-
-        <Pressable
-          style={[styles.secondaryPrimaryButton, isGoogleLoading && styles.primaryButtonDisabled]}
-          onPress={() => void handleGoogleLogin()}
-          disabled={isGoogleLoading}>
-          <Text style={styles.primaryButtonText}>
-            {isGoogleLoading ? '연결 중...' : 'Google로 계속하기'}
-          </Text>
-        </Pressable>
-
-        <Pressable style={styles.resetButton} onPress={resetInputs}>
-          <Text style={styles.resetButtonText}>입력 초기화</Text>
-        </Pressable>
+        <View style={styles.socialRow}>
+          <Pressable
+            style={[styles.googleCircleButton, isGoogleLoading && styles.primaryButtonDisabled]}
+            onPress={() => void handleGoogleLogin()}
+            disabled={isGoogleLoading}>
+            <Text style={styles.googleCircleText}>{isGoogleLoading ? '...' : 'G'}</Text>
+          </Pressable>
+        </View>
       </View>
     </ScreenContainer>
   );
@@ -367,26 +344,26 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    gap: 16,
+    flexGrow: 1,
     justifyContent: 'center',
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 32,
   },
-  hero: {
-    gap: 16,
+  authPanel: {
+    gap: 18,
   },
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.primaryLight,
-    color: colors.primary,
-    fontWeight: '600',
+  screenTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: colors.primaryStrong,
+    textAlign: 'center',
   },
   modeRow: {
     flexDirection: 'row',
     gap: 10,
+    padding: 6,
+    borderRadius: 22,
+    backgroundColor: '#EDE6D8',
   },
   modeChip: {
     flex: 1,
@@ -394,44 +371,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
   },
   modeChipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: '#B9D8CC',
+    backgroundColor: colors.surface,
   },
   modeChipText: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.textMuted,
+    color: '#7E857F',
   },
   modeChipTextActive: {
     color: colors.primaryStrong,
   },
   card: {
-    gap: 14,
-    padding: 20,
-    borderRadius: 20,
+    gap: 18,
+    padding: 24,
+    borderRadius: 26,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  cardDescription: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textMuted,
+    shadowColor: '#241F17',
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 2,
   },
   feedbackBox: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 16,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
   },
   feedbackError: {
     backgroundColor: '#FDECEC',
@@ -454,28 +426,42 @@ const styles = StyleSheet.create({
   feedbackSuccessText: {
     color: '#236B4D',
   },
+  formGroup: {
+    gap: 14,
+  },
+  fieldBlock: {
+    gap: 8,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primaryStrong,
+  },
   input: {
-    minHeight: 48,
-    borderRadius: 14,
-    backgroundColor: colors.background,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
+    minHeight: 54,
+    borderRadius: 16,
+    backgroundColor: '#FAF6EF',
+    borderWidth: 1,
+    borderColor: '#E7DECF',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
     color: colors.text,
   },
   primaryButton: {
-    marginTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 56,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: colors.primary,
   },
   secondaryPrimaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 56,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: colors.primaryStrong,
   },
   primaryButtonDisabled: {
@@ -486,19 +472,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  caption: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: colors.textMuted,
+  socialRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  resetButton: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  googleCircleButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: '#DDD2BF',
+    shadowColor: '#241F17',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    elevation: 2,
   },
-  resetButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
+  googleCircleText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.primaryStrong,
   },
 });

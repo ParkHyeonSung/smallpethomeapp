@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
+import { DeviceEventEmitter } from 'react-native';
 
 import { colors } from '@/src/constants/colors';
 import { supabase } from '@/src/lib/supabase';
@@ -67,6 +68,13 @@ export default function TabLayout() {
       }}>
       <Tabs.Screen
         name="index"
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            if (navigation.isFocused()) {
+              DeviceEventEmitter.emit('community:refresh-feed');
+            }
+          },
+        })}
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,

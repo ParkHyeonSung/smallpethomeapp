@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -8,12 +8,15 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  DeviceEventEmitter,
   Image as NativeImage,
   Modal,
   PanResponder,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -22,7 +25,6 @@ import {
 } from 'react-native';
 
 import CommentRow from '@/src/components/comments/CommentRow';
-import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import { CommentItem, createComment, deleteComment, getCommentsByPostId, updateComment } from '@/src/lib/comments';
@@ -60,6 +62,7 @@ export default function CommunityScreen() {
   const [menuCommentId, setMenuCommentId] = useState<string | null>(null);
   const [isFeatureMenuVisible, setIsFeatureMenuVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -87,8 +90,18 @@ export default function CommunityScreen() {
 
   useEffect(() => {
     if (!isFocused) return;
-    void loadPosts();
+    void loadPosts({ showLoader: posts.length === 0 });
   }, [isFocused]);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('community:refresh-feed', () => {
+      void loadPosts({ showLoader: posts.length === 0, refreshing: true });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [posts.length]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -126,9 +139,22 @@ export default function CommunityScreen() {
     });
   }, [posts, postImagesByPostId, imageRatios]);
 
-  const loadPosts = async () => {
+  const loadPosts = async ({
+    showLoader = true,
+    refreshing = false,
+  }: {
+    showLoader?: boolean;
+    refreshing?: boolean;
+  } = {}) => {
     try {
-      setIsLoading(true);
+      if (showLoader) {
+        setIsLoading(true);
+      }
+
+      if (refreshing) {
+        setIsRefreshing(true);
+      }
+
       const [feedPosts, likedIds] = await Promise.all([getFeedPosts(), getMyLikedPostIds()]);
       const nextPostImages = await getPostImagesByPostIds(feedPosts.map((post) => post.id));
 
@@ -138,8 +164,18 @@ export default function CommunityScreen() {
     } catch (error) {
       Alert.alert('불러오기 실패', error instanceof Error ? error.message : '게시글을 불러오지 못했습니다.');
     } finally {
-      setIsLoading(false);
+      if (showLoader) {
+        setIsLoading(false);
+      }
+
+      if (refreshing) {
+        setIsRefreshing(false);
+      }
     }
+  };
+
+  const handleRefresh = async () => {
+    await loadPosts({ showLoader: posts.length === 0, refreshing: true });
   };
 
   const loadCommentsForPost = async (postId: string) => {
@@ -388,24 +424,26 @@ export default function CommunityScreen() {
   };
 
   return (
-    <ScreenContainer scroll contentStyle={[styles.screenContent, isDesktopWeb && styles.screenContentDesktop]}>
+    <ScreenContainer
+      scroll
+      contentStyle={[styles.screenContent, isDesktopWeb && styles.screenContentDesktop]}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={() => void handleRefresh()}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }>
       <View style={styles.headerRow}>
         <Pressable
           style={styles.menuButton}
           onPress={openFeatureMenu}>
           <Ionicons name="menu" size={22} color={colors.text} />
         </Pressable>
-        <View style={styles.headerContent}>
-          <AppHeader
-            title="커뮤니티"
-            subtitle="여러 이미지를 좌우로 넘기며 게시글을 살펴볼 수 있습니다."
-          />
-        </View>
+        <Text style={styles.brandTitle}>KEKKU</Text>
+        <View style={styles.headerSpacer} />
       </View>
-
-      <Pressable style={styles.refreshButton} onPress={() => void loadPosts()}>
-        <Text style={styles.refreshButtonText}>새로고침</Text>
-      </Pressable>
 
       {isLoading ? (
         <View style={styles.statusCard}>
@@ -815,7 +853,7 @@ function formatPostDate(value: string) {
 
 const styles = StyleSheet.create({
   screenContent: {
-    gap: 16,
+    gap: 14,
   },
   screenContentDesktop: {
     width: '100%',
@@ -826,12 +864,14 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
   },
   menuButton: {
     width: 44,
     height: 44,
+    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -839,8 +879,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  headerContent: {
-    flex: 1,
+  brandTitle: {
+    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 2.4,
+    color: colors.primaryStrong,
+  },
+  headerSpacer: {
+    width: 44,
+    height: 44,
+    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
   },
   featureMenuOverlay: {
     flex: 1,
@@ -927,18 +976,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: colors.textMuted,
-  },
-  refreshButton: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: colors.primaryLight,
-  },
-  refreshButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
   },
   statusCard: {
     alignItems: 'center',
