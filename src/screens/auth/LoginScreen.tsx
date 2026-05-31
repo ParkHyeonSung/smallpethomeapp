@@ -21,7 +21,7 @@ import { supabase } from '@/src/lib/supabase';
 WebBrowser.maybeCompleteAuthSession();
 
 const nativeRedirectTo = AuthSession.makeRedirectUri({
-  native: 'smallpethomeapp:///login-callback',
+  path: 'login-callback',
 });
 
 type AuthMode = 'login' | 'signup';

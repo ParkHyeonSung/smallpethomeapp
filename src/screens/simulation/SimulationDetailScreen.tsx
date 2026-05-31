@@ -218,6 +218,15 @@ export default function SimulationDetailScreen() {
     );
   };
 
+  const handleBackPress = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace('/(tabs)/simulation');
+  };
+
   const applyObjectDragDelta = (mode: ObjectDragMode, dx: number, dy: number) => {
     const activeObjectId = selectedObjectIdRef.current;
     if (!activeObjectId) return;
@@ -547,8 +556,8 @@ export default function SimulationDetailScreen() {
         ) : null}
       </View>
 
-      <View style={styles.floatingHeader}>
-        <Pressable style={styles.circleButton} onPress={() => router.back()}>
+      <View style={styles.floatingHeader} pointerEvents="box-none">
+        <Pressable style={styles.circleButton} onPress={handleBackPress} hitSlop={10}>
           <Ionicons name="chevron-back" size={21} color={colors.text} />
         </Pressable>
         <View style={styles.headerBadge}>
@@ -1041,6 +1050,8 @@ const styles = StyleSheet.create({
     top: 14,
     left: 14,
     right: 14,
+    zIndex: 30,
+    elevation: 30,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
