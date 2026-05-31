@@ -77,22 +77,8 @@ export default function StressReportsScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <View style={styles.headerText}>
-          <AppHeader
-            title="진단 기록"
-            subtitle="저장된 스트레스 진단 결과를 다시 확인하고 환경 변화 전후를 비교할 수 있어요."
-          />
+          <AppHeader title="진단 기록" />
         </View>
-      </View>
-
-      <View style={[styles.summaryBand, isDesktopWeb && styles.summaryBandDesktop]}>
-        <View>
-          <Text style={styles.summaryLabel}>저장된 기록</Text>
-          <Text style={styles.summaryCount}>{reports.length}개</Text>
-        </View>
-        <Pressable style={styles.refreshButton} onPress={() => void loadReports()}>
-          <Ionicons name="refresh" size={16} color={colors.primaryStrong} />
-          <Text style={styles.refreshButtonText}>새로고침</Text>
-        </Pressable>
       </View>
 
       {isLoading ? (
@@ -106,9 +92,6 @@ export default function StressReportsScreen() {
         <View style={styles.stateCard}>
           <Ionicons name="document-text-outline" size={34} color={colors.primary} />
           <Text style={styles.stateTitle}>아직 저장된 진단 기록이 없어요.</Text>
-          <Text style={styles.stateText}>
-            모바일 앱에서 스트레스 진단을 완료한 뒤 결과를 저장하면 여기에 표시됩니다.
-          </Text>
           <Pressable style={styles.primaryButton} onPress={() => router.push('/stress-check' as never)}>
             <Text style={styles.primaryButtonText}>진단하러 가기</Text>
           </Pressable>
@@ -147,11 +130,6 @@ function ReportCard({
         <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
           <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
         </View>
-      </View>
-
-      <View style={styles.scoreRow}>
-        <Text style={styles.scoreValue}>{report.score}</Text>
-        <Text style={styles.scoreLabel}>/ 100</Text>
       </View>
 
       <Text style={styles.summaryText} numberOfLines={isDesktopWeb ? 3 : 4}>
@@ -217,45 +195,6 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
-  },
-  summaryBand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    padding: 18,
-    borderRadius: 18,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: '#C9DED5',
-  },
-  summaryBandDesktop: {
-    paddingHorizontal: 22,
-  },
-  summaryLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  summaryCount: {
-    marginTop: 4,
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  refreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 40,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-  },
-  refreshButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.primaryStrong,
   },
   stateCard: {
     alignItems: 'center',
@@ -339,23 +278,6 @@ const styles = StyleSheet.create({
   levelBadgeText: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  scoreValue: {
-    fontSize: 40,
-    lineHeight: 46,
-    fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  scoreLabel: {
-    paddingBottom: 7,
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.textMuted,
   },
   summaryText: {
     fontSize: 14,

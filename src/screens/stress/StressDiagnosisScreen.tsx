@@ -12,7 +12,6 @@ import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import MetricBarChart from '@/src/components/stress/MetricBarChart';
 import { colors } from '@/src/constants/colors';
@@ -469,23 +468,13 @@ export default function StressDiagnosisScreen() {
   return (
     <ScreenContainer scroll={step === 'result'}>
       <View style={[styles.container, step === 'result' && { flex: undefined }]}>
-        <View style={styles.topRow}>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </Pressable>
-          <AppHeader
-            title="입주 전 환경 적합성 진단"
-            subtitle="소음과 진동을 측정하고 결과를 바로 확인합니다."
-          />
-        </View>
+        <Pressable style={styles.backButton} onPress={step === 'sunlight' ? () => setStep('select') : () => router.back()}>
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
 
         {step === 'select' ? (
-          <View style={styles.centerCard}>
-            <Text style={styles.eyebrow}>Stress Check</Text>
-            <Text style={styles.centerTitle}>측정 방식을 선택해 주세요.</Text>
-            <Text style={styles.centerDescription}>
-              현재 환경을 빠르게 확인하거나 더 길게 측정해 환경 변동을 더 많이 반영할 수 있어요.
-            </Text>
+          <View style={styles.selectLayout}>
+            <Text style={styles.selectTitle}>측정 방식 선택</Text>
 
             <View style={styles.optionList}>
               {(['quick', 'precise'] as const).map((optionKey) => {
@@ -501,7 +490,11 @@ export default function StressDiagnosisScreen() {
                     </View>
                     <View style={styles.optionButtonMeta}>
                       <Text style={styles.optionButtonDuration}>{formatDurationLabel(option.durationSec)}</Text>
-                      <Ionicons name="chevron-forward" size={18} color={colors.primaryStrong} />
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color={colors.primaryStrong}
+                      />
                     </View>
                   </Pressable>
                 );
@@ -511,11 +504,10 @@ export default function StressDiagnosisScreen() {
         ) : null}
 
         {step === 'sunlight' ? (
-          <View style={styles.centerCard}>
-            <Text style={styles.eyebrow}>{selectedOption.label}</Text>
-            <Text style={styles.centerTitle}>{selectedOption.label} 전 확인</Text>
+          <View style={styles.formLayout}>
+            <Text style={styles.centerTitle}>{selectedOption.label}</Text>
             <Text style={styles.centerDescription}>
-              동물 종류를 선택하고 직사광선 조건만 먼저 반영할게요.
+              동물 종류와 직사광선 조건을 선택해주세요.
             </Text>
 
             <View style={styles.fieldBlock}>
@@ -588,10 +580,8 @@ export default function StressDiagnosisScreen() {
         ) : null}
 
         {step === 'measuring' ? (
-          <View style={styles.centerCard}>
-            <Text style={styles.eyebrow}>{selectedOption.label}</Text>
-            <Text style={styles.centerTitle}>{selectedOption.label} 중...</Text>
-            <Text style={styles.centerDescription}>{permissionStatusText}</Text>
+          <View style={styles.measureLayout}>
+            <Text style={styles.measureTitle}>{selectedOption.label} 중...</Text>
 
             <View style={styles.timerCircle}>
               <View style={styles.timerWrap}>
@@ -608,8 +598,7 @@ export default function StressDiagnosisScreen() {
         ) : null}
 
         {step === 'result' ? (
-          <View style={[styles.resultCard, { flex: undefined }]}>
-            <Text style={styles.eyebrow}>Result</Text>
+          <View style={styles.resultLayout}>
             <View style={styles.resultHeader}>
               <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
                 <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
@@ -618,7 +607,7 @@ export default function StressDiagnosisScreen() {
             </View>
 
             <Text style={styles.resultMetrics}>
-              {report.score}점 · 소음 {ambientNoiseDb || '0'} dB · 진동 {vibrationLevel}/10
+              소음 {ambientNoiseDb || '0'} dB · 진동 {vibrationLevel}/10
             </Text>
             <Text style={styles.resultInterpretation}>
               소음 {report.noiseBandLabel} · 진동 {getVibrationBandLabel(vibrationLevel)}
@@ -644,7 +633,7 @@ export default function StressDiagnosisScreen() {
             <Text style={styles.reportSummary}>{report.summary}</Text>
 
             {aiPreview ? (
-              <View style={styles.aiCard}>
+              <View style={styles.aiBlock}>
                 <Text style={styles.aiTitle}>{aiPreview.title}</Text>
                 <Text style={styles.aiBody}>{aiPreview.body}</Text>
               </View>
@@ -708,9 +697,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
-  topRow: {
-    gap: 14,
-  },
   backButton: {
     width: 38,
     height: 38,
@@ -721,23 +707,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  centerCard: {
+  formLayout: {
     flex: 1,
-    padding: 26,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     gap: 20,
     justifyContent: 'center',
-    shadowColor: '#111111',
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    elevation: 2,
+    marginTop: 14,
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: '#FBF8F1',
+    borderWidth: 1,
+    borderColor: '#E8E0D2',
   },
   eyebrow: {
     fontSize: 12,
@@ -759,6 +738,22 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
+  selectLayout: {
+    flex: 1,
+    gap: 22,
+    justifyContent: 'center',
+    marginTop: 14,
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: '#FBF8F1',
+    borderWidth: 1,
+    borderColor: '#E8E0D2',
+  },
+  selectTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.text,
+  },
   optionList: {
     gap: 14,
   },
@@ -766,9 +761,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 18,
     borderRadius: 24,
-    backgroundColor: '#F7F3EB',
     borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#EAF4EE',
+    borderColor: '#C8DDD2',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -892,6 +887,23 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.65,
   },
+  measureLayout: {
+    flex: 1,
+    gap: 26,
+    justifyContent: 'center',
+    marginTop: 14,
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: '#FBF8F1',
+    borderWidth: 1,
+    borderColor: '#E8E0D2',
+  },
+  measureTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+  },
   timerWrap: {
     alignItems: 'center',
     gap: 8,
@@ -924,21 +936,14 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
-  resultCard: {
-    padding: 26,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
+  resultLayout: {
+    gap: 18,
+    marginTop: 14,
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: '#FBF8F1',
     borderWidth: 1,
-    borderColor: colors.border,
-    gap: 16,
-    shadowColor: '#111111',
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    elevation: 2,
+    borderColor: '#E8E0D2',
   },
   resultHeader: {
     flexDirection: 'row',
@@ -977,16 +982,13 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   disclaimer: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 19,
     color: colors.textMuted,
-    textAlign: 'center',
+    textAlign: 'left',
   },
-  aiCard: {
-    padding: 16,
-    borderRadius: 22,
-    backgroundColor: '#F7F3EB',
-    gap: 10,
+  aiBlock: {
+    gap: 8,
   },
   aiTitle: {
     fontSize: 14,

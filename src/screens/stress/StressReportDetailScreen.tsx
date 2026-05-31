@@ -139,10 +139,7 @@ export default function StressReportDetailScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <View style={styles.headerText}>
-          <AppHeader
-            title="진단 상세"
-            subtitle="저장된 측정값과 위험 요인, 권장 조치를 확인합니다."
-          />
+          <AppHeader title="진단 상세" />
         </View>
       </View>
 
@@ -157,14 +154,6 @@ export default function StressReportDetailScreen() {
               <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
             </View>
           </View>
-
-          <View style={styles.scorePanel}>
-            <Text style={styles.scoreValue}>{report.score}</Text>
-            <Text style={styles.scoreLabel}>/ 100</Text>
-          </View>
-          <Text style={styles.scoreHint}>
-            점수가 낮을수록 안정적인 환경입니다. (0~27 적합 · 28~54 주의 · 55+ 부적합)
-          </Text>
 
           <Text style={styles.summaryText}>{report.summary}</Text>
 
@@ -187,20 +176,17 @@ export default function StressReportDetailScreen() {
         </View>
 
         <View style={styles.detailColumn}>
-
           <InfoList title="주요 위험 요인" icon="alert-circle-outline" items={report.highlights} />
           <InfoList title="권장 조치" icon="checkmark-circle-outline" items={report.recommendations} />
 
           <View style={styles.noticeCard}>
             <Ionicons name="information-circle-outline" size={18} color={colors.primaryStrong} />
-            <Text style={styles.noticeText}>{report.measurement_notice}</Text>
+            <Text style={styles.noticeText}>
+              이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
+              산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
+              문제가 관찰되면 반드시 수의사와 상담하세요.
+            </Text>
           </View>
-
-          <Text style={styles.disclaimer}>
-            이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
-            산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
-            문제가 관찰되면 반드시 수의사와 상담하세요.
-          </Text>
 
           <Pressable
             style={[styles.deleteButton, isDeleting && styles.disabled]}
@@ -303,11 +289,7 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     gap: 16,
-    padding: 20,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: 4,
   },
   summaryCardDesktop: {
     flex: 0.9,
@@ -337,28 +319,6 @@ const styles = StyleSheet.create({
   levelBadgeText: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  scorePanel: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  scoreValue: {
-    fontSize: 52,
-    lineHeight: 58,
-    fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  scoreLabel: {
-    paddingBottom: 9,
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.textMuted,
-  },
-  scoreHint: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textMuted,
   },
   summaryText: {
     fontSize: 15,
@@ -394,11 +354,9 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     gap: 12,
-    padding: 18,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   sectionTitle: {
     fontSize: 17,
@@ -421,15 +379,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: colors.primaryLight,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   noticeText: {
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
-    color: colors.primaryStrong,
+    color: colors.textMuted,
+  },
+  disclaimer: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: colors.textMuted,
   },
   deleteButton: {
     alignItems: 'center',

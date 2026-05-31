@@ -73,9 +73,7 @@ export default function MetricBarChart({ items }: MetricBarChartProps) {
 const styles = StyleSheet.create({
   container: {
     gap: 14,
-    padding: 18,
-    borderRadius: 22,
-    backgroundColor: '#F7F3EB',
+    paddingVertical: 4,
   },
   title: {
     fontSize: 14,

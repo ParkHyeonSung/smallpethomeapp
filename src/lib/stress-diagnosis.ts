@@ -229,13 +229,19 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
   const measurementMode = input.measurementMode ?? 'current';
   const { animalGroup, noiseBand, signals, recommendations } = buildSignals(input);
   const hasWarningSignal = signals.some((signal) => signal.severity === 'warning');
+  const vibrationLevel = clamp(input.vibrationLevel, 0, 10);
 
   let score = 0;
   score += noiseBand.penalty * animalGroup.noiseWeight;
-  score += clamp(input.vibrationLevel, 0, 10) * animalGroup.vibrationWeight;
+  score += vibrationLevel * animalGroup.vibrationWeight;
   if (input.directSunlight) score += animalGroup.directSunlightPenalty;
 
-  const roundedScore = clamp(Math.round(score), 0, 100);
+  let roundedScore = clamp(Math.round(score), 0, 100);
+  if (vibrationLevel >= 10) {
+    roundedScore = Math.max(roundedScore, 70);
+  } else if (vibrationLevel >= 8) {
+    roundedScore = Math.max(roundedScore, 55);
+  }
 
   let level: StressDiagnosisLevel = 'stable';
   let summary =
@@ -257,7 +263,19 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
         : '현재 환경은 바로 부적합하다고 보긴 어렵지만, 보완하면 더 안정적인 배치가 가능합니다.';
   }
 
-  if (level === 'stable' && hasWarningSignal) {
+  if (vibrationLevel >= 8) {
+    level = 'warning';
+    summary =
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 강한 진동이 감지되어 현재 위치는 입주 전 재검토가 필요합니다.'
+        : '현재 측정에서 강한 진동이 감지되어 위치 조정이나 재측정 확인이 필요합니다.';
+
+    if (vibrationLevel >= 10) {
+      recommendations.push(
+        '진동이 10/10으로 측정되었습니다. 측정 중 휴대폰을 손으로 들거나 흔들었다면, 바닥에 내려놓고 다시 측정해 주세요.'
+      );
+    }
+  } else if (level === 'stable' && hasWarningSignal) {
     level = 'caution';
     summary =
       measurementMode === 'peak'
