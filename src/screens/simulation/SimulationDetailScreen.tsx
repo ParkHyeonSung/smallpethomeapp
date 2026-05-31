@@ -42,82 +42,6 @@ type SelectedObjectScreenPosition = ScreenVector & {
     zCm: ScreenVector;
   };
 };
-type ObjectPreset = {
-  key: string;
-  type: CageObjectType;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description: string;
-  label: string;
-  widthCm: number;
-  depthCm: number;
-  heightCm: number;
-  color: string;
-};
-
-const OBJECT_PRESETS: ObjectPreset[] = [
-  {
-    key: 'hideout',
-    type: 'box',
-    icon: 'home-outline',
-    title: '은신처',
-    description: '작은 집이나 쉼터처럼 바로 두기 좋은 기본 프리셋',
-    label: '은신처',
-    widthCm: 18,
-    depthCm: 14,
-    heightCm: 14,
-    color: '#D6B07A',
-  },
-  {
-    key: 'water-bottle',
-    type: 'cylinder',
-    icon: 'water-outline',
-    title: '급수기',
-    description: '물병이나 급수 용품처럼 세로형으로 두기 좋은 프리셋',
-    label: '급수기',
-    widthCm: 8,
-    depthCm: 8,
-    heightCm: 18,
-    color: '#7C9CC7',
-  },
-  {
-    key: 'food-bowl',
-    type: 'cylinder',
-    icon: 'restaurant-outline',
-    title: '밥그릇',
-    description: '낮은 원형 오브젝트로 먹이 그릇 느낌을 빠르게 배치',
-    label: '밥그릇',
-    widthCm: 10,
-    depthCm: 10,
-    heightCm: 5,
-    color: '#E4B66A',
-  },
-  {
-    key: 'toilet',
-    type: 'box',
-    icon: 'cube-outline',
-    title: '화장실',
-    description: '직사각형 베이스의 기본 화장실 프리셋',
-    label: '화장실',
-    widthCm: 20,
-    depthCm: 15,
-    heightCm: 8,
-    color: '#8FB9A8',
-  },
-  {
-    key: 'platform',
-    type: 'box',
-    icon: 'layers-outline',
-    title: '선반',
-    description: '낮고 넓은 받침대나 선반 느낌으로 두기 좋은 프리셋',
-    label: '선반',
-    widthCm: 22,
-    depthCm: 12,
-    heightCm: 6,
-    color: '#C9A27E',
-  },
-];
-void OBJECT_PRESETS;
 
 export default function SimulationDetailScreen() {
   const params = useLocalSearchParams();
@@ -210,8 +134,8 @@ export default function SimulationDetailScreen() {
         setSelectedObjectId(nextSimulation.objects[0]?.id ?? null);
       } catch (error) {
         Alert.alert(
-          '시뮬레이션 불러오기 실패',
-          error instanceof Error ? error.message : '시뮬레이션을 불러오지 못했습니다.'
+          '?쒕??덉씠??遺덈윭?ㅺ린 ?ㅽ뙣',
+          error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 遺덈윭?ㅼ? 紐삵뻽?듬땲??'
         );
       } finally {
         setIsLoading(false);
@@ -244,12 +168,15 @@ export default function SimulationDetailScreen() {
   };
 
   const addObject = (type: CageObjectType) => {
-    const nextLabel = preset?.label ?? (type === 'cylinder' ? '원형 배치물' : '박스 배치물');
-    void nextLabel;
-    const nextObject: CageSimulationObject = {
+    const safeObject: CageSimulationObject = {
       id: `${Date.now()}-${objects.length}`,
       type,
-      label: type === 'cylinder' ? '원형 배치물' : '박스 배치물',
+      label:
+        type === 'cylinder'
+          ? '원형 배치물'
+          : type === 'pyramid'
+            ? '삼각뿔 배치물'
+            : '박스 배치물',
       xCm: Math.max(Number(cageWidthCm) / 2 || 10, 1),
       yCm: 0,
       zCm: Math.max(Number(cageDepthCm) / 2 || 10, 1),
@@ -260,9 +187,10 @@ export default function SimulationDetailScreen() {
       color: OBJECT_COLORS[objects.length % OBJECT_COLORS.length],
     };
 
-    setObjects((prev) => [...prev, nextObject]);
-    setSelectedObjectId(nextObject.id);
+    setObjects((prev) => [...prev, safeObject]);
+    setSelectedObjectId(safeObject.id);
     setActiveTab('edit');
+    return;
   };
 
   const updateSelectedObject = (updates: Partial<CageSimulationObject>) => {
@@ -496,11 +424,11 @@ export default function SimulationDetailScreen() {
 
       setSimulation(nextSimulation);
       setObjects(nextSimulation.objects);
-      Alert.alert('저장 완료', '현재 배치가 저장되었습니다.');
+      Alert.alert('????꾨즺', '?꾩옱 諛곗튂媛 ??λ릺?덉뒿?덈떎.');
     } catch (error) {
       Alert.alert(
-        '저장 실패',
-        error instanceof Error ? error.message : '시뮬레이션을 저장하지 못했습니다.'
+        '????ㅽ뙣',
+        error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 ??ν븯吏 紐삵뻽?듬땲??'
       );
     } finally {
       setIsSaving(false);
@@ -517,8 +445,8 @@ export default function SimulationDetailScreen() {
         router.replace('/(tabs)/simulation');
       } catch (error) {
         Alert.alert(
-          '삭제 실패',
-          error instanceof Error ? error.message : '시뮬레이션을 삭제하지 못했습니다.'
+          '??젣 ?ㅽ뙣',
+          error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 ??젣?섏? 紐삵뻽?듬땲??'
         );
       } finally {
         setIsDeleting(false);
@@ -527,14 +455,14 @@ export default function SimulationDetailScreen() {
 
     if (Platform.OS === 'web') {
       const confirmed =
-        typeof window !== 'undefined' ? window.confirm('이 시뮬레이션을 삭제할까요?') : false;
+        typeof window !== 'undefined' ? window.confirm('???쒕??덉씠?섏쓣 ??젣?좉퉴??') : false;
       if (confirmed) void runDelete();
       return;
     }
 
-    Alert.alert('시뮬레이션 삭제', '이 시뮬레이션을 삭제할까요?', [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => void runDelete() },
+    Alert.alert('?쒕??덉씠????젣', '???쒕??덉씠?섏쓣 ??젣?좉퉴??', [
+      { text: '痍⑥냼', style: 'cancel' },
+      { text: '??젣', style: 'destructive', onPress: () => void runDelete() },
     ]);
   };
 
@@ -542,7 +470,7 @@ export default function SimulationDetailScreen() {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.stateText}>시뮬레이션 화면을 불러오는 중입니다...</Text>
+        <Text style={styles.stateText}>?쒕??덉씠???붾㈃??遺덈윭?ㅻ뒗 以묒엯?덈떎...</Text>
       </ScreenContainer>
     );
   }
@@ -550,7 +478,7 @@ export default function SimulationDetailScreen() {
   if (!simulation) {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
-        <Text style={styles.stateTitle}>시뮬레이션을 찾을 수 없습니다.</Text>
+        <Text style={styles.stateTitle}>?쒕??덉씠?섏쓣 李얠쓣 ???놁뒿?덈떎.</Text>
         <Pressable style={styles.primaryButton} onPress={() => router.replace('/(tabs)/simulation')}>
           <Text style={styles.primaryButtonText}>목록으로 돌아가기</Text>
         </Pressable>
@@ -639,19 +567,19 @@ export default function SimulationDetailScreen() {
           <PanelButton
             active={activeTab === 'place'}
             icon="add-circle-outline"
-            label="배치"
+            label="諛곗튂"
             onPress={() => selectPanelTab('place')}
           />
           <PanelButton
             active={activeTab === 'edit'}
             icon="options-outline"
-            label="편집"
+            label="?몄쭛"
             onPress={() => selectPanelTab('edit')}
           />
           <PanelButton
             active={activeTab === 'cage'}
             icon="cube-outline"
-            label="케이지"
+            label="耳?댁?"
             onPress={() => selectPanelTab('cage')}
           />
         </View>
@@ -669,19 +597,19 @@ export default function SimulationDetailScreen() {
               <PlaceCard
                 icon="cube-outline"
                 title="박스 배치"
-                description="은신처, 급수기, 사료통처럼 각진 물건"
+                description="은신처, 선반처럼 각진 기본 형태"
                 onPress={() => addObject('box')}
               />
               <PlaceCard
                 icon="ellipse-outline"
                 title="원형 배치"
-                description="쳇바퀴, 밥그릇처럼 둥근 물건"
+                description="밥그릇, 급수기처럼 둥근 기본 형태"
                 onPress={() => addObject('cylinder')}
               />
               <PlaceCard
                 icon="triangle-outline"
-                title="삼각뿔"
-                description="기본 삼각뿔 형태 배치물"
+                title="삼각뿔 배치"
+                description="경사형 구조물처럼 세워두는 기본 형태"
                 onPress={() => addObject('pyramid')}
               />
             </>
@@ -693,7 +621,7 @@ export default function SimulationDetailScreen() {
                 <TextInput
                   value={selectedObject.label}
                   onChangeText={(label) => updateSelectedObject({ label })}
-                  placeholder="배치물 이름"
+                  placeholder="諛곗튂臾??대쫫"
                   placeholderTextColor={colors.textMuted}
                   style={styles.input}
                 />
@@ -735,13 +663,13 @@ export default function SimulationDetailScreen() {
                 </View>
 
                 <Pressable style={styles.removeButton} onPress={removeSelectedObject}>
-                  <Text style={styles.removeButtonText}>선택한 배치물 삭제</Text>
+                  <Text style={styles.removeButtonText}>?좏깮??諛곗튂臾???젣</Text>
                 </Pressable>
               </View>
             ) : (
               <View style={styles.emptyEditPanel}>
-                <Text style={styles.emptyTitle}>선택된 배치물이 없어요.</Text>
-                <Text style={styles.emptyText}>배치 탭에서 박스나 원형을 추가하면 편집 탭이 열립니다.</Text>
+                <Text style={styles.emptyTitle}>?좏깮??諛곗튂臾쇱씠 ?놁뼱??</Text>
+                <Text style={styles.emptyText}>諛곗튂 ??뿉??諛뺤뒪???먰삎??異붽??섎㈃ ?몄쭛 ??씠 ?대┰?덈떎.</Text>
               </View>
             )
           ) : null}
@@ -770,7 +698,7 @@ export default function SimulationDetailScreen() {
                   onPress={deleteSimulation}
                   disabled={isDeleting}>
                   <Text style={styles.deleteButtonText}>
-                    {isDeleting ? '삭제 중...' : '시뮬레이션 삭제'}
+                    {isDeleting ? '??젣 以?..' : '?쒕??덉씠????젣'}
                   </Text>
                 </Pressable>
               </View>
