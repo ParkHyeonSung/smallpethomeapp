@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import type { GestureResponderEvent, GestureResponderHandlers } from 'react-native';
 
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import SimulationPreview from '@/src/components/simulation/SimulationPreview';
@@ -31,8 +32,10 @@ import {
 
 const OBJECT_COLORS = ['#E4B66A', '#8FB9A8', '#D45B5B', '#7C9CC7', '#A78BFA'];
 const PANEL_COLLAPSED_Y = 206;
+const DRAG_CM_PER_PIXEL = 0.32;
 
 type PanelTab = 'place' | 'edit' | 'cage';
+type ObjectDragMode = 'move' | 'height';
 
 export default function SimulationDetailScreen() {
   const params = useLocalSearchParams();
@@ -51,8 +54,11 @@ export default function SimulationDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [objectDragMode, setObjectDragMode] = useState<ObjectDragMode | null>(null);
   const panelTranslateY = useRef(new Animated.Value(0)).current;
   const panelOffsetRef = useRef(0);
+  const objectDragStartRef = useRef<Pick<CageSimulationObject, 'xCm' | 'yCm' | 'zCm'> | null>(null);
+  const objectDragPointerStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const snapPanel = (nextOffset: number) => {
     panelOffsetRef.current = nextOffset;
@@ -177,6 +183,140 @@ export default function SimulationDetailScreen() {
     );
   };
 
+  const applyObjectDragDelta = (mode: ObjectDragMode, dx: number, dy: number) => {
+    if (!selectedObjectId) return;
+
+    const startPosition = objectDragStartRef.current;
+    if (!startPosition) return;
+
+    const updates =
+      mode === 'move'
+        ? {
+            xCm: startPosition.xCm + dx * DRAG_CM_PER_PIXEL,
+            zCm: startPosition.zCm + dy * DRAG_CM_PER_PIXEL,
+          }
+        : {
+            yCm: startPosition.yCm - dy * DRAG_CM_PER_PIXEL,
+          };
+
+    moveSelectedObject(updates);
+  };
+
+  const stopObjectDrag = () => {
+    objectDragStartRef.current = null;
+    objectDragPointerStartRef.current = null;
+    setObjectDragMode(null);
+  };
+
+  const startObjectDrag = (mode: ObjectDragMode, event: GestureResponderEvent) => {
+    if (!selectedObject) return;
+
+    objectDragStartRef.current = {
+      xCm: selectedObject.xCm,
+      yCm: selectedObject.yCm,
+      zCm: selectedObject.zCm,
+    };
+    objectDragPointerStartRef.current = {
+      x: event.nativeEvent.pageX,
+      y: event.nativeEvent.pageY,
+    };
+    setObjectDragMode(mode);
+  };
+
+  const createObjectDragResponder = (mode: ObjectDragMode) =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !!selectedObject,
+      onMoveShouldSetPanResponder: () => !!selectedObject,
+      onPanResponderGrant: (event) => startObjectDrag(mode, event),
+      onPanResponderMove: (_, gesture) => {
+        applyObjectDragDelta(mode, gesture.dx, gesture.dy);
+      },
+      onPanResponderRelease: stopObjectDrag,
+      onPanResponderTerminate: stopObjectDrag,
+    });
+
+  const moveDragResponder = createObjectDragResponder('move');
+  const heightDragResponder = createObjectDragResponder('height');
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    const previousCursor = document.body.style.cursor;
+    if (!objectDragMode) {
+      return;
+    }
+
+    document.body.style.cursor = 'none';
+
+    const applyWebDragDelta = (dx: number, dy: number) => {
+      const startPosition = objectDragStartRef.current;
+      if (!startPosition || !selectedObjectId) return;
+
+      const updates =
+        objectDragMode === 'move'
+          ? {
+              xCm: startPosition.xCm + dx * DRAG_CM_PER_PIXEL,
+              zCm: startPosition.zCm + dy * DRAG_CM_PER_PIXEL,
+            }
+          : {
+              yCm: startPosition.yCm - dy * DRAG_CM_PER_PIXEL,
+            };
+
+      setObjects((prev) =>
+        prev.map((object) => {
+          if (object.id !== selectedObjectId) {
+            return object;
+          }
+
+          return {
+            ...object,
+            ...getClampedObjectPosition(object, {
+              widthCm: Number(cageWidthCm),
+              depthCm: Number(cageDepthCm),
+              heightCm: Number(cageHeightCm),
+            }, updates),
+          };
+        })
+      );
+    };
+
+    const finishWebDrag = () => {
+      objectDragStartRef.current = null;
+      objectDragPointerStartRef.current = null;
+      setObjectDragMode(null);
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const pointerStart = objectDragPointerStartRef.current;
+      if (!pointerStart) return;
+
+      applyWebDragDelta(event.pageX - pointerStart.x, event.pageY - pointerStart.y);
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const pointerStart = objectDragPointerStartRef.current;
+      const touch = event.touches[0];
+      if (!pointerStart || !touch) return;
+
+      applyWebDragDelta(touch.pageX - pointerStart.x, touch.pageY - pointerStart.y);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', finishWebDrag);
+    window.addEventListener('touchmove', handleTouchMove);
+    window.addEventListener('touchend', finishWebDrag);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', finishWebDrag);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', finishWebDrag);
+    };
+  }, [cageDepthCm, cageHeightCm, cageWidthCm, objectDragMode, selectedObjectId]);
+
   const rotateSelectedObject = (direction: 1 | -1) => {
     if (!selectedObjectId) return;
     updateSelectedObject({ rotationY: (selectedObject?.rotationY ?? 0) + direction * (Math.PI / 6) });
@@ -285,22 +425,39 @@ export default function SimulationDetailScreen() {
             setSelectedObjectId(objectId);
             setActiveTab('edit');
           }}
-          onObjectChange={(objectId, updates) => {
-            setObjects((prev) =>
-              prev.map((object) =>
-                object.id === objectId ? { ...object, ...updates } : object
-              )
-            );
-            setSelectedObjectId(objectId);
-          }}
-          onObjectDelete={(objectId) => {
-            setObjects((prev) => {
-              const nextObjects = prev.filter((object) => object.id !== objectId);
-              setSelectedObjectId(nextObjects[0]?.id ?? null);
-              return nextObjects;
-            });
-          }}
         />
+        {selectedObject ? (
+          <View
+            style={[
+              styles.objectOverlayControls,
+              objectDragMode && styles.objectOverlayControlsHidden,
+            ]}
+            pointerEvents={objectDragMode ? 'none' : 'box-none'}>
+            <View style={styles.objectTopControls}>
+              <OverlayControlButton
+                icon="trash-outline"
+                variant="danger"
+                onPress={removeSelectedObject}
+              />
+              <OverlayControlButton
+                icon="swap-vertical"
+                onPressIn={(event) => startObjectDrag('height', event)}
+                panHandlers={heightDragResponder.panHandlers}
+              />
+            </View>
+            <View style={styles.objectBottomControls}>
+              <OverlayControlButton icon="return-down-back" onPress={() => rotateSelectedObject(-1)} />
+              <OverlayControlButton
+                icon="move"
+                size="large"
+                onPressIn={(event) => startObjectDrag('move', event)}
+                panHandlers={moveDragResponder.panHandlers}
+              />
+              <OverlayControlButton icon="return-down-forward" onPress={() => rotateSelectedObject(1)} />
+            </View>
+          </View>
+        ) : null}
+        {objectDragMode ? <View style={styles.dragCursorHider} pointerEvents="none" /> : null}
       </View>
 
       <View style={styles.floatingHeader}>
@@ -553,6 +710,39 @@ function ControlButton({
   );
 }
 
+function OverlayControlButton({
+  icon,
+  onPress,
+  onPressIn,
+  panHandlers,
+  size = 'medium',
+  variant = 'default',
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress?: () => void;
+  onPressIn?: (event: GestureResponderEvent) => void;
+  panHandlers?: GestureResponderHandlers;
+  size?: 'medium' | 'large';
+  variant?: 'default' | 'danger';
+}) {
+  return (
+    <Pressable
+      style={[
+        styles.floatingControlButton,
+        size === 'large' && styles.floatingControlButtonLarge,
+      ]}
+      onPress={onPress}
+      onPressIn={onPressIn}
+      {...panHandlers}>
+      <Ionicons
+        name={icon}
+        size={size === 'large' ? 22 : 20}
+        color={variant === 'danger' ? colors.danger : colors.primaryStrong}
+      />
+    </Pressable>
+  );
+}
+
 function TextNumberInput({
   label,
   value,
@@ -641,10 +831,20 @@ const styles = StyleSheet.create({
   },
   objectOverlayControls: {
     position: 'absolute',
-    width: 180,
-    height: 172,
+    top: '42%',
+    left: '50%',
+    width: 176,
+    height: 168,
+    marginLeft: -88,
+    marginTop: -84,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  objectOverlayControlsHidden: {
+    opacity: 0,
+  },
+  dragCursorHider: {
+    ...StyleSheet.absoluteFillObject,
   },
   objectTopControls: {
     position: 'absolute',
@@ -659,6 +859,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+  },
+  directionPad: {
+    alignItems: 'center',
+    gap: 8,
   },
   floatingControlButton: {
     width: 42,
