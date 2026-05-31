@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import type { GestureResponderHandlers } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ScreenContainer from '@/src/components/common/ScreenContainer';
@@ -44,8 +45,10 @@ type SelectedObjectScreenPosition = ScreenVector & {
 };
 
 export default function SimulationDetailScreen() {
+  const navigation = useNavigation();
   const params = useLocalSearchParams();
   const simulationId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const draftParam = Array.isArray(params.draft) ? params.draft[0] : params.draft;
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const previewHeight = Math.max(360, height - 245);
@@ -61,6 +64,7 @@ export default function SimulationDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDraft, setIsDraft] = useState(draftParam === '1');
   const [objectDragMode, setObjectDragMode] = useState<ObjectDragMode | null>(null);
   const [selectedObjectScreenPosition, setSelectedObjectScreenPosition] =
     useState<SelectedObjectScreenPosition | null>(null);
@@ -75,6 +79,7 @@ export default function SimulationDetailScreen() {
   const selectedObjectScreenPositionRef = useRef<SelectedObjectScreenPosition | null>(null);
   const cageSizeRef = useRef({ widthCm: 0, depthCm: 0, heightCm: 0 });
   const objectOverlayTranslate = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const allowExitRef = useRef(false);
 
   const snapPanel = (nextOffset: number) => {
     panelOffsetRef.current = nextOffset;
@@ -135,8 +140,8 @@ export default function SimulationDetailScreen() {
         setSelectedObjectId(nextSimulation.objects[0]?.id ?? null);
       } catch (error) {
         Alert.alert(
-          '?쒕??덉씠??遺덈윭?ㅺ린 ?ㅽ뙣',
-          error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 遺덈윭?ㅼ? 紐삵뻽?듬땲??'
+          '시뮬레이션 불러오기 실패',
+          error instanceof Error ? error.message : '시뮬레이션을 불러오지 못했습니다.'
         );
       } finally {
         setIsLoading(false);
@@ -145,6 +150,19 @@ export default function SimulationDetailScreen() {
 
     void loadSimulation();
   }, [simulationId]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (!isDraft || allowExitRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      promptDraftDiscard();
+    });
+
+    return unsubscribe;
+  }, [isDraft, navigation, simulation]);
 
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
   const objectOverlayPosition =
@@ -204,13 +222,66 @@ export default function SimulationDetailScreen() {
     );
   };
 
-  const handleBackPress = () => {
-    if (router.canGoBack()) {
-      router.back();
+  const leaveSimulationScreen = () => {
+    allowExitRef.current = true;
+
+    if (navigation.canGoBack()) {
+      navigation.goBack();
       return;
     }
 
     router.replace('/(tabs)/simulation');
+  };
+
+  const discardDraftAndLeave = async () => {
+    if (!simulation || !isDraft) {
+      leaveSimulationScreen();
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await deleteCageSimulation(simulation.id);
+      leaveSimulationScreen();
+    } catch (error) {
+      Alert.alert(
+        '임시 시뮬레이션 삭제 실패',
+        error instanceof Error ? error.message : '저장하지 않은 시뮬레이션을 삭제하지 못했습니다.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const promptDraftDiscard = () => {
+    if (!simulation || !isDraft) {
+      leaveSimulationScreen();
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined'
+          ? window.confirm('저장하지 않으면 현재 시뮬레이션은 삭제됩니다. 나갈까요?')
+          : false;
+      if (confirmed) {
+        void discardDraftAndLeave();
+      }
+      return;
+    }
+
+    Alert.alert(
+      '저장하지 않은 시뮬레이션',
+      '저장하지 않으면 현재 시뮬레이션은 삭제됩니다. 나갈까요?',
+      [
+        { text: '계속 편집', style: 'cancel' },
+        { text: '나가기', style: 'destructive', onPress: () => void discardDraftAndLeave() },
+      ]
+    );
+  };
+
+  const handleBackPress = () => {
+    promptDraftDiscard();
   };
 
   const applyObjectDragDelta = (mode: ObjectDragMode, dx: number, dy: number) => {
@@ -425,11 +496,12 @@ export default function SimulationDetailScreen() {
 
       setSimulation(nextSimulation);
       setObjects(nextSimulation.objects);
-      Alert.alert('????꾨즺', '?꾩옱 諛곗튂媛 ??λ릺?덉뒿?덈떎.');
+      setIsDraft(false);
+      Alert.alert('저장 완료', '현재 배치가 저장되었습니다.');
     } catch (error) {
       Alert.alert(
-        '????ㅽ뙣',
-        error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 ??ν븯吏 紐삵뻽?듬땲??'
+        '저장 실패',
+        error instanceof Error ? error.message : '시뮬레이션을 저장하지 못했습니다.'
       );
     } finally {
       setIsSaving(false);
@@ -446,8 +518,8 @@ export default function SimulationDetailScreen() {
         router.replace('/(tabs)/simulation');
       } catch (error) {
         Alert.alert(
-          '??젣 ?ㅽ뙣',
-          error instanceof Error ? error.message : '?쒕??덉씠?섏쓣 ??젣?섏? 紐삵뻽?듬땲??'
+          '삭제 실패',
+          error instanceof Error ? error.message : '시뮬레이션을 삭제하지 못했습니다.'
         );
       } finally {
         setIsDeleting(false);
@@ -456,14 +528,14 @@ export default function SimulationDetailScreen() {
 
     if (Platform.OS === 'web') {
       const confirmed =
-        typeof window !== 'undefined' ? window.confirm('???쒕??덉씠?섏쓣 ??젣?좉퉴??') : false;
+        typeof window !== 'undefined' ? window.confirm('이 시뮬레이션을 삭제할까요?') : false;
       if (confirmed) void runDelete();
       return;
     }
 
-    Alert.alert('?쒕??덉씠????젣', '???쒕??덉씠?섏쓣 ??젣?좉퉴??', [
-      { text: '痍⑥냼', style: 'cancel' },
-      { text: '??젣', style: 'destructive', onPress: () => void runDelete() },
+    Alert.alert('시뮬레이션 삭제', '이 시뮬레이션을 삭제할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: () => void runDelete() },
     ]);
   };
 
@@ -471,7 +543,7 @@ export default function SimulationDetailScreen() {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.stateText}>?쒕??덉씠???붾㈃??遺덈윭?ㅻ뒗 以묒엯?덈떎...</Text>
+        <Text style={styles.stateText}>시뮬레이션을 불러오는 중입니다...</Text>
       </ScreenContainer>
     );
   }
@@ -479,7 +551,7 @@ export default function SimulationDetailScreen() {
   if (!simulation) {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
-        <Text style={styles.stateTitle}>?쒕??덉씠?섏쓣 李얠쓣 ???놁뒿?덈떎.</Text>
+        <Text style={styles.stateTitle}>시뮬레이션을 찾을 수 없습니다.</Text>
         <Pressable style={styles.primaryButton} onPress={() => router.replace('/(tabs)/simulation')}>
           <Text style={styles.primaryButtonText}>목록으로 돌아가기</Text>
         </Pressable>
@@ -570,19 +642,19 @@ export default function SimulationDetailScreen() {
           <PanelButton
             active={activeTab === 'place'}
             icon="add-circle-outline"
-            label="諛곗튂"
+            label="배치"
             onPress={() => selectPanelTab('place')}
           />
           <PanelButton
             active={activeTab === 'edit'}
             icon="options-outline"
-            label="?몄쭛"
+            label="편집"
             onPress={() => selectPanelTab('edit')}
           />
           <PanelButton
             active={activeTab === 'cage'}
             icon="cube-outline"
-            label="耳?댁?"
+            label="케이지"
             onPress={() => selectPanelTab('cage')}
           />
         </View>
@@ -600,19 +672,19 @@ export default function SimulationDetailScreen() {
               <PlaceCard
                 icon="cube-outline"
                 title="박스 배치"
-                description="은신처, 선반처럼 각진 기본 형태"
+                description="은신처나 일반 구조물처럼 각진 기본 형태"
                 onPress={() => addObject('box')}
               />
               <PlaceCard
                 icon="ellipse-outline"
                 title="원형 배치"
-                description="밥그릇, 급수기처럼 둥근 기본 형태"
+                description="밥그릇이나 급수기처럼 둥근 기본 형태"
                 onPress={() => addObject('cylinder')}
               />
               <PlaceCard
                 icon="triangle-outline"
                 title="삼각뿔 배치"
-                description="경사형 구조물처럼 세워두는 기본 형태"
+                description="경사면 구조물처럼 포인트를 주는 기본 형태"
                 onPress={() => addObject('pyramid')}
               />
             </>
@@ -624,7 +696,7 @@ export default function SimulationDetailScreen() {
                 <TextInput
                   value={selectedObject.label}
                   onChangeText={(label) => updateSelectedObject({ label })}
-                  placeholder="諛곗튂臾??대쫫"
+                  placeholder="배치물 이름"
                   placeholderTextColor={colors.textMuted}
                   style={styles.input}
                 />
@@ -666,13 +738,13 @@ export default function SimulationDetailScreen() {
                 </View>
 
                 <Pressable style={styles.removeButton} onPress={removeSelectedObject}>
-                  <Text style={styles.removeButtonText}>?좏깮??諛곗튂臾???젣</Text>
+                  <Text style={styles.removeButtonText}>선택한 배치물 삭제</Text>
                 </Pressable>
               </View>
             ) : (
               <View style={styles.emptyEditPanel}>
-                <Text style={styles.emptyTitle}>?좏깮??諛곗튂臾쇱씠 ?놁뼱??</Text>
-                <Text style={styles.emptyText}>諛곗튂 ??뿉??諛뺤뒪???먰삎??異붽??섎㈃ ?몄쭛 ??씠 ?대┰?덈떎.</Text>
+                <Text style={styles.emptyTitle}>선택한 배치물이 없어요</Text>
+                <Text style={styles.emptyText}>배치 탭에서 박스나 원형을 추가하면 여기서 크기와 위치를 조정할 수 있습니다.</Text>
               </View>
             )
           ) : null}
@@ -701,7 +773,7 @@ export default function SimulationDetailScreen() {
                   onPress={deleteSimulation}
                   disabled={isDeleting}>
                   <Text style={styles.deleteButtonText}>
-                    {isDeleting ? '??젣 以?..' : '?쒕??덉씠????젣'}
+                    {isDeleting ? '삭제 중...' : '시뮬레이션 삭제'}
                   </Text>
                 </Pressable>
               </View>

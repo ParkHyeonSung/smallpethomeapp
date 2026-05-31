@@ -20,14 +20,9 @@ import { colors } from '@/src/constants/colors';
 import {
   CageSimulationItem,
   createCageSimulation,
+  deleteCageSimulation,
   getMyCageSimulations,
 } from '@/src/lib/cage-simulations';
-
-const CAGE_PRESETS = [
-  { label: '소형 케이지', width: 45, depth: 30, height: 30 },
-  { label: '기본 케이지', width: 60, depth: 40, height: 35 },
-  { label: '넓은 케이지', width: 80, depth: 50, height: 45 },
-];
 
 export default function SimulationScreen() {
   const isFocused = useIsFocused();
@@ -40,6 +35,7 @@ export default function SimulationScreen() {
   const [simulations, setSimulations] = useState<CageSimulationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
+  const [deletingSimulationId, setDeletingSimulationId] = useState<string | null>(null);
 
   const loadSimulations = async () => {
     try {
@@ -60,18 +56,13 @@ export default function SimulationScreen() {
     void loadSimulations();
   }, [isFocused]);
 
-  const applyPreset = (preset: (typeof CAGE_PRESETS)[number]) => {
-    setCageWidthCm(String(preset.width));
-    setCageDepthCm(String(preset.depth));
-    setCageHeightCm(String(preset.height));
-  };
-
   const startSimulation = async () => {
     try {
       setIsStarting(true);
       const widthCm = Number(cageWidthCm);
       const depthCm = Number(cageDepthCm);
       const heightCm = Number(cageHeightCm);
+
       const nextSimulation = await createCageSimulation({
         title: `${widthCm}x${depthCm} 케이지 배치`,
         cageWidthCm: widthCm,
@@ -81,7 +72,10 @@ export default function SimulationScreen() {
         isPublic: false,
       });
 
-      router.push({ pathname: '/simulation/[id]', params: { id: nextSimulation.id } });
+      router.push({
+        pathname: '/simulation/[id]',
+        params: { id: nextSimulation.id, draft: '1' },
+      });
     } catch (error) {
       Alert.alert(
         '시뮬레이션 시작 실패',
@@ -92,39 +86,54 @@ export default function SimulationScreen() {
     }
   };
 
+  const handleDeleteSimulation = (simulationId: string) => {
+    const runDelete = async () => {
+      try {
+        setDeletingSimulationId(simulationId);
+        await deleteCageSimulation(simulationId);
+        await loadSimulations();
+      } catch (error) {
+        Alert.alert(
+          '시뮬레이션 삭제 실패',
+          error instanceof Error ? error.message : '저장된 시뮬레이션을 삭제하지 못했습니다.'
+        );
+      } finally {
+        setDeletingSimulationId(null);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' ? window.confirm('이 시뮬레이션을 삭제할까요?') : false;
+      if (confirmed) {
+        void runDelete();
+      }
+      return;
+    }
+
+    Alert.alert('시뮬레이션 삭제', '이 시뮬레이션을 삭제할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: () => void runDelete() },
+    ]);
+  };
+
   return (
-    <ScreenContainer
-      scroll
-      contentStyle={[styles.content, isDesktopWeb && styles.contentDesktop]}>
+    <ScreenContainer scroll contentStyle={[styles.content, isDesktopWeb && styles.contentDesktop]}>
       <AppHeader
         title="3D 시뮬레이션"
-        subtitle="케이지 크기만 정하면 바로 큰 작업 화면에서 배치물을 놓고 크기를 조정할 수 있어요."
+        subtitle="3D 시뮬레이션을 통해 미리 케이지를 꾸며봐요"
       />
 
       <View style={[styles.startCard, isDesktopWeb && styles.startCardDesktop]}>
         <View style={styles.heroIcon}>
           <Ionicons name="cube-outline" size={28} color={colors.primaryStrong} />
         </View>
-        <Text style={styles.heroTitle}>케이지 크기를 먼저 선택해 주세요</Text>
-        <Text style={styles.heroText}>
-          동물 종류는 받지 않고, 입력한 공간을 기준으로 바로 3D 배치 화면을 엽니다.
-        </Text>
-
-        <View style={styles.presetRow}>
-          {CAGE_PRESETS.map((preset) => (
-            <Pressable key={preset.label} style={styles.presetButton} onPress={() => applyPreset(preset)}>
-              <Text style={styles.presetTitle}>{preset.label}</Text>
-              <Text style={styles.presetText}>
-                {preset.width} x {preset.depth} x {preset.height}cm
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <Text style={styles.heroTitle}>케이지 크기 입력</Text>
 
         <View style={[styles.dimensionRow, !isDesktopWeb && styles.dimensionRowMobile]}>
-          <DimensionInput label="가로(cm)" value={cageWidthCm} onChange={setCageWidthCm} />
-          <DimensionInput label="세로(cm)" value={cageDepthCm} onChange={setCageDepthCm} />
-          <DimensionInput label="높이(cm)" value={cageHeightCm} onChange={setCageHeightCm} />
+          <DimensionInput label="가로 (cm)" value={cageWidthCm} onChange={setCageWidthCm} />
+          <DimensionInput label="세로 (cm)" value={cageDepthCm} onChange={setCageDepthCm} />
+          <DimensionInput label="높이 (cm)" value={cageHeightCm} onChange={setCageHeightCm} />
         </View>
 
         <Pressable
@@ -161,31 +170,42 @@ export default function SimulationScreen() {
         {!isLoading && simulations.length === 0 ? (
           <View style={styles.emptyBlock}>
             <Text style={styles.emptyTitle}>아직 저장된 시뮬레이션이 없어요.</Text>
-            <Text style={styles.stateText}>위에서 케이지 크기를 선택하고 첫 배치를 시작해 보세요.</Text>
+            <Text style={styles.stateText}>위에서 케이지 크기를 입력하고 시작해보세요.</Text>
           </View>
         ) : null}
 
         {!isLoading && simulations.length > 0 ? (
           <View style={styles.simulationList}>
             {simulations.map((simulation) => (
-              <Pressable
-                key={simulation.id}
-                style={styles.simulationItem}
-                onPress={() =>
-                  router.push({ pathname: '/simulation/[id]', params: { id: simulation.id } })
-                }>
-                <View style={styles.simulationIcon}>
-                  <Ionicons name="cube-outline" size={18} color={colors.primaryStrong} />
-                </View>
-                <View style={styles.simulationMeta}>
-                  <Text style={styles.simulationTitle}>{simulation.title}</Text>
-                  <Text style={styles.simulationSubtitle}>
-                    {simulation.cage_width_cm} x {simulation.cage_depth_cm} x{' '}
-                    {simulation.cage_height_cm} cm
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </Pressable>
+              <View key={simulation.id} style={styles.simulationItem}>
+                <Pressable
+                  style={styles.simulationMain}
+                  onPress={() =>
+                    router.push({ pathname: '/simulation/[id]', params: { id: simulation.id } })
+                  }>
+                  <View style={styles.simulationIcon}>
+                    <Ionicons name="cube-outline" size={18} color={colors.primaryStrong} />
+                  </View>
+                  <View style={styles.simulationMeta}>
+                    <Text style={styles.simulationTitle}>{simulation.title}</Text>
+                    <Text style={styles.simulationSubtitle}>
+                      {simulation.cage_width_cm} x {simulation.cage_depth_cm} x{' '}
+                      {simulation.cage_height_cm} cm
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.simulationDeleteButton,
+                    deletingSimulationId === simulation.id && styles.disabled,
+                  ]}
+                  onPress={() => handleDeleteSimulation(simulation.id)}
+                  disabled={deletingSimulationId === simulation.id}>
+                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                </Pressable>
+              </View>
             ))}
           </View>
         ) : null}
@@ -252,36 +272,6 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     fontWeight: '900',
     color: colors.text,
-  },
-  heroText: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: colors.textMuted,
-  },
-  presetRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  presetButton: {
-    flexGrow: 1,
-    minWidth: 140,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  presetTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: colors.text,
-  },
-  presetText: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primaryStrong,
   },
   dimensionRow: {
     flexDirection: 'row',
@@ -386,6 +376,12 @@ const styles = StyleSheet.create({
   simulationItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  simulationMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     padding: 14,
     borderRadius: 16,
@@ -411,6 +407,16 @@ const styles = StyleSheet.create({
   simulationSubtitle: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  simulationDeleteButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF3F3',
+    borderWidth: 1,
+    borderColor: '#F2B7B7',
   },
   disabled: {
     opacity: 0.7,
