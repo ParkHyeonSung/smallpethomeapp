@@ -14,6 +14,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
+import MetricBarChart from '@/src/components/stress/MetricBarChart';
 import { colors } from '@/src/constants/colors';
 import { buildStressAiPayload, buildStressAiPreview, StressAiPreview } from '@/src/lib/stress-ai';
 import {
@@ -62,7 +63,8 @@ const MEASUREMENT_OPTIONS = {
   },
 } as const;
 
-const SPECIES_OPTIONS = ['설치류', '기니피그류', '토끼류', '파충류', '기타 소형 포유류'] as const;
+const SPECIES_OPTIONS = ['설치류', '기니피그', '토끼', '파충류', '기타 포유류'] as const;
+const OTHER_MAMMAL_SUB = ['고슴도치', '슈가글라이더', '페럿'] as const;
 const VIBRATION_SAMPLE_INTERVAL_MS = 20;
 
 type MeasurementType = keyof typeof MEASUREMENT_OPTIONS;
@@ -145,7 +147,7 @@ export default function StressDiagnosisScreen() {
 
   const [step, setStep] = useState<Step>('select');
   const [measurementType, setMeasurementType] = useState<MeasurementType>('quick');
-  const [species, setSpecies] = useState<(typeof SPECIES_OPTIONS)[number]>('설치류');
+  const [species, setSpecies] = useState<string>('설치류');
   const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
   const [vibrationLevel, setVibrationLevel] = useState(0);
   const [directSunlight, setDirectSunlight] = useState(false);
@@ -465,8 +467,8 @@ export default function StressDiagnosisScreen() {
   }
 
   return (
-    <ScreenContainer>
-      <View style={styles.container}>
+    <ScreenContainer scroll={step === 'result'}>
+      <View style={[styles.container, step === 'result' && { flex: undefined }]}>
         <View style={styles.topRow}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
@@ -520,12 +522,21 @@ export default function StressDiagnosisScreen() {
               <Text style={styles.fieldLabel}>동물 종류</Text>
               <View style={styles.speciesOptionList}>
                 {SPECIES_OPTIONS.map((option) => {
-                  const active = species === option;
+                  const active =
+                    option === '기타 포유류'
+                      ? (OTHER_MAMMAL_SUB as readonly string[]).includes(species)
+                      : species === option;
                   return (
                     <Pressable
                       key={option}
                       style={[styles.speciesOptionChip, active && styles.speciesOptionChipActive]}
-                      onPress={() => setSpecies(option)}>
+                      onPress={() => {
+                        if (option === '기타 포유류') {
+                          setSpecies('고슴도치');
+                        } else {
+                          setSpecies(option);
+                        }
+                      }}>
                       <Text
                         style={[
                           styles.speciesOptionChipText,
@@ -538,6 +549,31 @@ export default function StressDiagnosisScreen() {
                 })}
               </View>
             </View>
+
+            {(OTHER_MAMMAL_SUB as readonly string[]).includes(species) ? (
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>세부 종 선택</Text>
+                <View style={styles.speciesOptionList}>
+                  {OTHER_MAMMAL_SUB.map((sub) => {
+                    const active = species === sub;
+                    return (
+                      <Pressable
+                        key={sub}
+                        style={[styles.speciesOptionChip, active && styles.speciesOptionChipActive]}
+                        onPress={() => setSpecies(sub)}>
+                        <Text
+                          style={[
+                            styles.speciesOptionChipText,
+                            active && styles.speciesOptionChipTextActive,
+                          ]}>
+                          {sub}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             <BooleanField
               label="직사광선이 직접 들어오고 피할 공간이 없나요?"
@@ -572,7 +608,7 @@ export default function StressDiagnosisScreen() {
         ) : null}
 
         {step === 'result' ? (
-          <View style={styles.resultCard}>
+          <View style={[styles.resultCard, { flex: undefined }]}>
             <Text style={styles.eyebrow}>Result</Text>
             <View style={styles.resultHeader}>
               <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
@@ -587,6 +623,24 @@ export default function StressDiagnosisScreen() {
             <Text style={styles.resultInterpretation}>
               소음 {report.noiseBandLabel} · 진동 {getVibrationBandLabel(vibrationLevel)}
             </Text>
+
+            <MetricBarChart
+              items={[
+                {
+                  label: '소음',
+                  value: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
+                  maxValue: 100,
+                  displayValue: `${ambientNoiseDb || '0'} dB`,
+                },
+                {
+                  label: '진동',
+                  value: vibrationLevel,
+                  maxValue: 10,
+                  displayValue: `${vibrationLevel}/10`,
+                },
+              ]}
+            />
+
             <Text style={styles.reportSummary}>{report.summary}</Text>
 
             {aiPreview ? (
@@ -595,6 +649,12 @@ export default function StressDiagnosisScreen() {
                 <Text style={styles.aiBody}>{aiPreview.body}</Text>
               </View>
             ) : null}
+
+            <Text style={styles.disclaimer}>
+              이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
+              산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
+              문제가 관찰되면 반드시 수의사와 상담하세요.
+            </Text>
 
             <View style={styles.resultActions}>
               <Pressable style={styles.secondaryButton} onPress={handleReset}>
@@ -619,6 +679,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     gap: 16,
+    paddingBottom: 40,
   },
   mobileOnlyContent: {
     flex: 1,
@@ -864,7 +925,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   resultCard: {
-    flex: 1,
     padding: 26,
     borderRadius: 28,
     backgroundColor: colors.surface,
@@ -915,6 +975,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     color: colors.text,
+  },
+  disclaimer: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
   aiCard: {
     padding: 16,

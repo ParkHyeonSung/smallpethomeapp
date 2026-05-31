@@ -39,11 +39,7 @@ const LEVEL_META: Record<
   },
 };
 
-const TRAFFIC_LABEL: Record<StressReportItem['traffic_level'], string> = {
-  low: '낮음',
-  medium: '보통',
-  high: '많음',
-};
+
 
 export default function StressReportsScreen() {
   const isFocused = useIsFocused();
@@ -155,7 +151,7 @@ function ReportCard({
 
       <View style={styles.scoreRow}>
         <Text style={styles.scoreValue}>{report.score}</Text>
-        <Text style={styles.scoreLabel}>점</Text>
+        <Text style={styles.scoreLabel}>/ 100</Text>
       </View>
 
       <Text style={styles.summaryText} numberOfLines={isDesktopWeb ? 3 : 4}>
@@ -165,15 +161,6 @@ function ReportCard({
       <View style={styles.metricGrid}>
         <Metric label="소음" value={`${report.ambient_noise_db} dB`} />
         <Metric label="진동" value={`${report.vibration_level}/10`} />
-        <Metric
-          label="케이지"
-          value={
-            report.cage_width_cm && report.cage_depth_cm
-              ? `${report.cage_width_cm} x ${report.cage_depth_cm} cm`
-              : '미입력'
-          }
-        />
-        <Metric label="동선" value={TRAFFIC_LABEL[report.traffic_level]} />
       </View>
     </Pressable>
   );

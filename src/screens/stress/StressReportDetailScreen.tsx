@@ -14,6 +14,7 @@ import {
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
+import MetricBarChart from '@/src/components/stress/MetricBarChart';
 import { colors } from '@/src/constants/colors';
 import {
   deleteStressReport,
@@ -42,11 +43,6 @@ const LEVEL_META: Record<
   },
 };
 
-const TRAFFIC_LABEL: Record<StressReportItem['traffic_level'], string> = {
-  low: '낮음',
-  medium: '보통',
-  high: '많음',
-};
 
 export default function StressReportDetailScreen() {
   const params = useLocalSearchParams();
@@ -145,7 +141,7 @@ export default function StressReportDetailScreen() {
         <View style={styles.headerText}>
           <AppHeader
             title="진단 상세"
-            subtitle="저장된 측정값, 체크 항목, 위험 요인과 권장 조치를 확인합니다."
+            subtitle="저장된 측정값과 위험 요인, 권장 조치를 확인합니다."
           />
         </View>
       </View>
@@ -164,36 +160,33 @@ export default function StressReportDetailScreen() {
 
           <View style={styles.scorePanel}>
             <Text style={styles.scoreValue}>{report.score}</Text>
-            <Text style={styles.scoreLabel}>점</Text>
+            <Text style={styles.scoreLabel}>/ 100</Text>
           </View>
+          <Text style={styles.scoreHint}>
+            점수가 낮을수록 안정적인 환경입니다. (0~27 적합 · 28~54 주의 · 55+ 부적합)
+          </Text>
 
           <Text style={styles.summaryText}>{report.summary}</Text>
 
-          <View style={styles.metricGrid}>
-            <Metric label="소음" value={`${report.ambient_noise_db} dB`} />
-            <Metric label="소음 등급" value={report.noise_band_label} />
-            <Metric label="진동" value={`${report.vibration_level}/10`} />
-            <Metric label="동선" value={TRAFFIC_LABEL[report.traffic_level]} />
-            <Metric
-              label="케이지"
-              value={
-                report.cage_width_cm && report.cage_depth_cm
-                  ? `${report.cage_width_cm} x ${report.cage_depth_cm} cm`
-                  : '미입력'
-              }
-            />
-          </View>
+          <MetricBarChart
+            items={[
+              {
+                label: '소음',
+                value: report.ambient_noise_db,
+                maxValue: 100,
+                displayValue: `${report.ambient_noise_db} dB`,
+              },
+              {
+                label: '진동',
+                value: report.vibration_level,
+                maxValue: 10,
+                displayValue: `${report.vibration_level}/10`,
+              },
+            ]}
+          />
         </View>
 
         <View style={styles.detailColumn}>
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>체크 항목</Text>
-            <ChecklistRow label="대피처 준비" value={report.checklist.hideoutReady} positive />
-            <ChecklistRow label="환기 안정" value={report.checklist.ventilationReady} positive />
-            <ChecklistRow label="직사광선 노출" value={report.checklist.directSunlight} />
-            <ChecklistRow label="스피커/TV 근처" value={report.checklist.nearSpeaker} />
-            <ChecklistRow label="불안정한 바닥" value={report.checklist.unstableFloor} />
-          </View>
 
           <InfoList title="주요 위험 요인" icon="alert-circle-outline" items={report.highlights} />
           <InfoList title="권장 조치" icon="checkmark-circle-outline" items={report.recommendations} />
@@ -202,6 +195,12 @@ export default function StressReportDetailScreen() {
             <Ionicons name="information-circle-outline" size={18} color={colors.primaryStrong} />
             <Text style={styles.noticeText}>{report.measurement_notice}</Text>
           </View>
+
+          <Text style={styles.disclaimer}>
+            이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
+            산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
+            문제가 관찰되면 반드시 수의사와 상담하세요.
+          </Text>
 
           <Pressable
             style={[styles.deleteButton, isDeleting && styles.disabled]}
@@ -226,31 +225,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ChecklistRow({
-  label,
-  value,
-  positive = false,
-}: {
-  label: string;
-  value: boolean;
-  positive?: boolean;
-}) {
-  const isGood = positive ? value : !value;
-
-  return (
-    <View style={styles.checkRow}>
-      <Ionicons
-        name={isGood ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-        size={18}
-        color={isGood ? colors.primary : colors.danger}
-      />
-      <Text style={styles.checkLabel}>{label}</Text>
-      <Text style={[styles.checkValue, { color: isGood ? colors.primary : colors.danger }]}>
-        {value ? '예' : '아니요'}
-      </Text>
-    </View>
-  );
-}
 
 function InfoList({
   title,
@@ -381,6 +355,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.textMuted,
   },
+  scoreHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
   summaryText: {
     fontSize: 15,
     lineHeight: 23,
@@ -426,20 +405,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  checkLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-  },
-  checkValue: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
+
   infoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
