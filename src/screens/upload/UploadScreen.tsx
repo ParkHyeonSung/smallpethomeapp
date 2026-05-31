@@ -315,10 +315,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
 
   return (
     <ScreenContainer scroll contentStyle={styles.content}>
-      <AppHeader
-        title="게시글 업로드"
-        subtitle="이미지를 여러 장 올리고, 대표 이미지 기준으로 제품 태그를 함께 저장할 수 있습니다."
-      />
+      <AppHeader title="게시글 업로드" />
 
       <View style={[styles.layout, isDesktopWeb && styles.layoutDesktop]}>
         <View style={[styles.previewCard, isDesktopWeb && styles.previewCardDesktop]}>
