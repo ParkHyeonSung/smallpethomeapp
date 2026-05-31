@@ -1,5 +1,7 @@
 export type TrafficLevel = 'low' | 'medium' | 'high';
 
+export type StressMeasurementMode = 'current' | 'peak';
+
 export type StressDiagnosisInput = {
   species: string;
   cageWidthCm: number | null;
@@ -12,11 +14,39 @@ export type StressDiagnosisInput = {
   directSunlight: boolean;
   nearSpeaker: boolean;
   unstableFloor: boolean;
+  measurementMode?: StressMeasurementMode;
+};
+
+export type StressDiagnosisLevel = 'stable' | 'caution' | 'warning';
+
+export type StressDiagnosisSignalCode =
+  | 'noise_stable'
+  | 'noise_watch'
+  | 'noise_caution'
+  | 'noise_high'
+  | 'noise_very_high'
+  | 'vibration_low'
+  | 'vibration_medium'
+  | 'vibration_high'
+  | 'traffic_medium'
+  | 'traffic_high'
+  | 'cage_small'
+  | 'hideout_missing'
+  | 'ventilation_unstable'
+  | 'direct_sunlight'
+  | 'near_speaker'
+  | 'unstable_floor';
+
+export type StressDiagnosisSignal = {
+  code: StressDiagnosisSignalCode;
+  severity: 'info' | 'caution' | 'warning';
+  title: string;
+  detail: string;
 };
 
 export type StressDiagnosisReport = {
   score: number;
-  level: 'stable' | 'caution' | 'warning';
+  level: StressDiagnosisLevel;
   summary: string;
   highlights: string[];
   recommendations: string[];
@@ -24,44 +54,59 @@ export type StressDiagnosisReport = {
   measurementNotice: string;
 };
 
+export type StressAiSummaryInput = {
+  status: {
+    level: StressDiagnosisLevel;
+    label: string;
+    score: number;
+  };
+  measurement: {
+    mode: StressMeasurementMode;
+    modeLabel: string;
+    ambientNoiseDb: number;
+    noiseBandLabel: string;
+    vibrationLevel: number;
+    trafficLevel: TrafficLevel;
+  };
+  signals: StressDiagnosisSignal[];
+  strengths: string[];
+  focusRecommendations: string[];
+  caveats: string[];
+};
+
+type NoiseBand = {
+  label: string;
+  penalty: number;
+  signal: StressDiagnosisSignal;
+  recommendation: string;
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getTrafficPenalty(level: TrafficLevel) {
-  if (level === 'high') return 12;
-  if (level === 'medium') return 6;
-  return 0;
+function getLevelLabel(level: StressDiagnosisLevel) {
+  if (level === 'warning') return '부적합';
+  if (level === 'caution') return '주의';
+  return '적합';
 }
 
-function getCageSizePenalty(species: string, width: number | null, depth: number | null) {
-  if (!width || !depth) return 4;
-
-  const area = width * depth;
-  const normalized = species.trim().toLowerCase();
-
-  if (normalized.includes('hamster') || normalized.includes('햄스터')) {
-    return area < 4000 ? 10 : area < 5000 ? 5 : 0;
-  }
-
-  if (normalized.includes('hedgehog') || normalized.includes('고슴도치')) {
-    return area < 4500 ? 10 : area < 5600 ? 5 : 0;
-  }
-
-  if (normalized.includes('guinea') || normalized.includes('기니피그')) {
-    return area < 7000 ? 10 : area < 9000 ? 5 : 0;
-  }
-
-  return area < 3600 ? 8 : area < 4800 ? 4 : 0;
+function getMeasurementModeLabel(mode: StressMeasurementMode) {
+  return mode === 'peak' ? '피크 시간 측정' : '현재 환경 측정';
 }
 
-function getNoiseBand(noiseDb: number) {
+function getNoiseBand(noiseDb: number): NoiseBand {
   if (noiseDb >= 90) {
     return {
       label: '매우 높음',
       penalty: 36,
-      highlight: '스마트폰 기준으로 매우 큰 소음이 감지되었습니다. 문헌상 급성 스트레스 위험 구간에 가깝습니다.',
-      recommendation: '즉시 소음원을 줄이고 더 조용한 위치로 케이지를 옮기는 것을 권장합니다.',
+      signal: {
+        code: 'noise_very_high',
+        severity: 'warning',
+        title: '소음이 매우 높게 측정됨',
+        detail: '짧은 시간 측정에서도 매우 큰 소음 피크가 확인되어 입주 전 재배치 검토가 필요합니다.',
+      },
+      recommendation: 'TV, 스피커, 청소기, 출입문 주변처럼 큰 소음이 반복되는 위치는 피하는 것이 좋습니다.',
     };
   }
 
@@ -69,8 +114,13 @@ function getNoiseBand(noiseDb: number) {
     return {
       label: '높음',
       penalty: 28,
-      highlight: '고소음 구간에 가까운 환경으로 보입니다. 장시간 유지되면 복지 측면에서 부담이 될 수 있습니다.',
-      recommendation: 'TV, 스피커, 청소기, 환풍기 같은 반복 소음원을 먼저 줄여주세요.',
+      signal: {
+        code: 'noise_high',
+        severity: 'warning',
+        title: '소음이 높은 편',
+        detail: '생활 소음이 반복될 경우 스트레스 요인으로 작용할 가능성이 높습니다.',
+      },
+      recommendation: '가장 시끄러운 시간대에도 비슷한 수준이 반복되는지 한 번 더 확인해 보세요.',
     };
   }
 
@@ -78,8 +128,13 @@ function getNoiseBand(noiseDb: number) {
     return {
       label: '주의 필요',
       penalty: 20,
-      highlight: '상대적으로 높은 소음이 감지되었습니다. 반복 노출 시 스트레스 가능성이 커질 수 있습니다.',
-      recommendation: '조용한 위치로 옮기고, 소음이 큰 시간대가 반복되는지 확인해 주세요.',
+      signal: {
+        code: 'noise_caution',
+        severity: 'caution',
+        title: '소음 주의 구간',
+        detail: '현재 위치는 일상적인 소음 자극이 누적될 수 있는 구간으로 보입니다.',
+      },
+      recommendation: '문, 창문, 복도, 가전제품과의 거리를 다시 확인해 주세요.',
     };
   }
 
@@ -87,98 +142,129 @@ function getNoiseBand(noiseDb: number) {
     return {
       label: '관찰 필요',
       penalty: 10,
-      highlight: '배경 소음이 아주 낮은 편은 아닙니다. 누적 스트레스 관찰이 필요한 구간입니다.',
-      recommendation: '가능하면 65 dB 미만의 더 조용한 환경을 유지해 주세요.',
+      signal: {
+        code: 'noise_watch',
+        severity: 'caution',
+        title: '배경 소음이 감지됨',
+        detail: '즉시 문제가 되는 수준은 아니지만 시간대에 따라 체감이 달라질 수 있습니다.',
+      },
+      recommendation: '가능하면 더 조용한 위치와 비교 측정을 해 보세요.',
     };
   }
 
   return {
     label: '안정',
     penalty: 0,
-    highlight: '현재 소음은 비교적 안정적인 편으로 보입니다.',
-    recommendation: '현재 환경을 유지하면서 특정 시간대의 일시적 소음만 추가 점검해 주세요.',
+    signal: {
+      code: 'noise_stable',
+      severity: 'info',
+      title: '소음은 비교적 안정적',
+      detail: '현재 측정 기준으로는 주변 소음이 크게 두드러지지 않았습니다.',
+    },
+    recommendation: '현재 환경은 무난해 보이지만, 생활 소음이 큰 시간대에 추가 측정하면 더 정확합니다.',
+  };
+}
+
+function buildSignals(input: StressDiagnosisInput) {
+  const signals: StressDiagnosisSignal[] = [];
+  const strengths: string[] = [];
+  const recommendations: string[] = [];
+
+  const noiseBand = getNoiseBand(clamp(input.ambientNoiseDb, 0, 140));
+  signals.push(noiseBand.signal);
+  recommendations.push(noiseBand.recommendation);
+
+  const cagePenalty = 0;
+
+  if (input.vibrationLevel >= 7) {
+    signals.push({
+      code: 'vibration_high',
+      severity: 'warning',
+      title: '진동이 높게 측정됨',
+      detail: '바닥 충격이나 주변 기기 진동이 지속적으로 전달될 가능성이 있습니다.',
+    });
+    recommendations.push('세탁기, 스피커, 문 여닫힘 충격이 전달되는 바닥인지 확인해 주세요.');
+  } else if (input.vibrationLevel >= 4) {
+    signals.push({
+      code: 'vibration_medium',
+      severity: 'caution',
+      title: '진동이 다소 감지됨',
+      detail: '현재 위치가 미세한 흔들림에 노출될 수 있습니다.',
+    });
+    recommendations.push('받침대, 선반, 흔들리는 바닥 위라면 더 안정적인 위치를 고려해 주세요.');
+  } else {
+    strengths.push('진동은 비교적 안정적으로 측정되었습니다.');
+    signals.push({
+      code: 'vibration_low',
+      severity: 'info',
+      title: '진동은 안정적',
+      detail: '현재 측정 기준으로는 큰 흔들림이 감지되지 않았습니다.',
+    });
+  }
+
+  if (input.directSunlight) {
+    signals.push({
+      code: 'direct_sunlight',
+      severity: 'warning',
+      title: '직사광선 노출 가능성',
+      detail: '열 축적과 과도한 밝기 자극으로 이어질 수 있습니다.',
+    });
+    recommendations.push('직사광선이 직접 닿지 않는 위치로 옮기거나 차광 대책을 고려해 주세요.');
+  }
+
+  return {
+    noiseBand,
+    cagePenalty,
+    signals,
+    strengths,
+    recommendations: Array.from(new Set(recommendations)),
   };
 }
 
 export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressDiagnosisReport {
-  const highlights: string[] = [];
-  const recommendations: string[] = [];
+  const measurementMode = input.measurementMode ?? 'current';
+  const { noiseBand, cagePenalty, signals, recommendations } = buildSignals(input);
 
   let score = 0;
-
-  const noiseBand = getNoiseBand(clamp(input.ambientNoiseDb, 0, 140));
   score += noiseBand.penalty;
-  highlights.push(noiseBand.highlight);
-  recommendations.push(noiseBand.recommendation);
-
-  const cagePenalty = getCageSizePenalty(input.species, input.cageWidthCm, input.cageDepthCm);
   score += cagePenalty;
-  if (cagePenalty >= 8) {
-    highlights.push('케이지 바닥 면적이 현재 사육 환경 기준에서 다소 좁을 가능성이 있습니다.');
-    recommendations.push('동물 종에 맞는 최소 활동 공간과 은신 공간이 확보되는지 다시 점검해 주세요.');
-  }
-
-  const vibrationPenalty = clamp(input.vibrationLevel, 0, 10) * 1.8;
-  score += vibrationPenalty;
-  if (input.vibrationLevel >= 7) {
-    highlights.push('진동 수준이 높아 바닥 충격이나 주변 기기 흔들림이 스트레스 요인이 될 수 있습니다.');
-    recommendations.push('단단하고 평평한 바닥으로 옮기고, 진동이 전달되는 가전제품 근처는 피해주세요.');
-  } else if (input.vibrationLevel >= 4) {
-    highlights.push('약한 진동이 계속 전달될 가능성이 있습니다. 설치 위치를 한 번 더 확인하면 좋습니다.');
-    recommendations.push('선반 흔들림이나 문 여닫이 진동이 전달되지 않는지 확인해 주세요.');
-  }
-
-  const trafficPenalty = getTrafficPenalty(input.trafficLevel);
-  score += trafficPenalty;
-  if (input.trafficLevel !== 'low') {
-    highlights.push('사람 동선이 잦아 휴식 시간에도 외부 자극이 계속 들어올 수 있습니다.');
-    recommendations.push('지나가는 사람이 적고 갑작스러운 움직임이 덜한 위치를 우선 고려해 주세요.');
-  }
-
-  if (!input.hideoutReady) {
-    score += 12;
-    highlights.push('은신처가 없어 불안 상황에서 숨을 수 있는 공간이 부족합니다.');
-    recommendations.push('최소 1개 이상의 은신처를 넣고 내부가 너무 밝지 않도록 조정해 주세요.');
-  }
-
-  if (!input.ventilationReady) {
-    score += 8;
-    highlights.push('환기 흐름이 답답하면 열과 냄새가 축적되어 환경 부담이 커질 수 있습니다.');
-    recommendations.push('직접적인 찬바람은 피하되 공기 순환이 되는 위치인지 확인해 주세요.');
-  }
-
-  if (input.directSunlight) {
-    score += 8;
-    highlights.push('직사광선 노출은 온도 상승과 과도한 자극으로 이어질 수 있습니다.');
-    recommendations.push('직사광선이 직접 닿지 않는 위치로 옮기거나 차광을 고려해 주세요.');
-  }
-
-  if (input.nearSpeaker) {
-    score += 10;
-    highlights.push('스피커, TV, 게임기 근처는 고주파와 반복 소음 노출 위험이 큽니다.');
-    recommendations.push('전자기기와 거리를 두고, 진동과 소음이 적은 장소를 우선 선택해 주세요.');
-  }
-
-  if (input.unstableFloor) {
-    score += 10;
-    highlights.push('케이지가 흔들리는 바닥이나 선반 위에 있으면 지속 진동이 전달될 수 있습니다.');
-    recommendations.push('더 단단하고 평평한 바닥으로 옮기고 받침대 흔들림을 줄여주세요.');
-  }
+  score += clamp(input.vibrationLevel, 0, 10) * 1.8;
+  if (input.directSunlight) score += 8;
 
   const roundedScore = clamp(Math.round(score), 0, 100);
-  let level: StressDiagnosisReport['level'] = 'stable';
+
+  let level: StressDiagnosisLevel = 'stable';
   let summary =
-    '현재 환경은 비교적 안정적으로 보입니다. 다만 시간대별 소음과 진동 변화를 한 번 더 점검하면 좋습니다.';
+    measurementMode === 'peak'
+      ? '피크 시간 기준으로도 현재 위치는 비교적 안정적으로 보입니다.'
+      : '현재 측정 기준으로는 비교적 안정적인 환경으로 보입니다.';
 
   if (roundedScore >= 55) {
     level = 'warning';
     summary =
-      '현재 환경은 입주 전에 우선 조정이 필요한 항목이 많습니다. 소음, 진동, 배치 조건을 먼저 손보는 편이 좋습니다.';
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 스트레스 위험 신호가 뚜렷해 입주 전 위치 조정이 권장됩니다.'
+        : '현재 측정만으로도 스트레스 위험 신호가 보여 위치 조정이나 환경 보완이 필요합니다.';
   } else if (roundedScore >= 28) {
     level = 'caution';
     summary =
-      '몇 가지 스트레스 위험 요소가 보입니다. 바로 위험하다고 단정할 수는 없지만, 입주 전 보완을 권장합니다.';
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 몇 가지 주의 요인이 확인되었습니다. 입주 전 보완을 권장합니다.'
+        : '현재 환경은 바로 부적합하다고 보긴 어렵지만, 보완하면 더 안정적인 배치가 가능합니다.';
   }
+
+  const highlights = signals
+    .filter((signal) => signal.severity !== 'info')
+    .map((signal) => `${signal.title}: ${signal.detail}`);
+
+  if (highlights.length === 0) {
+    highlights.push('현재 측정 기준으로 큰 위험 신호는 두드러지지 않았습니다.');
+  }
+
+  const measurementNotice =
+    measurementMode === 'peak'
+      ? '이 결과는 소음, 진동, 직사광선 여부를 바탕으로 한 피크 시간 기준 스마트폰 센서 기반 사전 점검입니다. 임상 진단이 아니라 입주 전 위험도 비교용으로 해석해 주세요.'
+      : '이 결과는 소음, 진동, 직사광선 여부를 바탕으로 한 현재 시점의 스마트폰 센서 기반 사전 점검입니다. 더 정확한 비교를 원하면 소음이나 진동이 큰 시간대에 추가 측정을 권장합니다.';
 
   return {
     score: roundedScore,
@@ -187,7 +273,39 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
     highlights,
     recommendations,
     noiseBandLabel: noiseBand.label,
-    measurementNotice:
-      '이 결과는 스마트폰 마이크와 센서를 이용한 간이 측정 기반입니다. 절대값보다는 환경 비교와 사전 점검용으로 해석해 주세요.',
+    measurementNotice,
+  };
+}
+
+export function buildStressAiSummaryInput(
+  input: StressDiagnosisInput,
+  report = buildStressDiagnosisReport(input)
+): StressAiSummaryInput {
+  const measurementMode = input.measurementMode ?? 'current';
+  const { signals, strengths, recommendations } = buildSignals(input);
+
+  return {
+    status: {
+      level: report.level,
+      label: getLevelLabel(report.level),
+      score: report.score,
+    },
+    measurement: {
+      mode: measurementMode,
+      modeLabel: getMeasurementModeLabel(measurementMode),
+      ambientNoiseDb: clamp(input.ambientNoiseDb, 0, 140),
+      noiseBandLabel: report.noiseBandLabel,
+      vibrationLevel: clamp(input.vibrationLevel, 0, 10),
+      trafficLevel: input.trafficLevel,
+    },
+    signals,
+    strengths,
+    focusRecommendations: recommendations.slice(0, 3),
+    caveats: [
+      '스마트폰 센서 기반 간이 측정이며 공인 계측기나 수의학적 진단을 대체하지 않습니다.',
+      measurementMode === 'current'
+        ? '현재 시점 결과이므로 생활 소음이 큰 시간대에는 결과가 달라질 수 있습니다.'
+        : '피크 시간 기준 결과이므로 일상 평균 환경보다 보수적으로 해석될 수 있습니다.',
+    ],
   };
 }
