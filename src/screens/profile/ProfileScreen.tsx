@@ -14,7 +14,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import { getFollowerCount } from '@/src/lib/follows';
@@ -43,7 +42,8 @@ export default function ProfileScreen() {
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
-  const cardWidth = isMobile ? '31.5%' : '18.6%';
+  const gridColumns = isMobile ? 3 : 5;
+  const gridGap = 14;
 
   const [profile, setProfile] = useState<ProfileSummary>({
     avatarUrl: null,
@@ -55,6 +55,12 @@ export default function ProfileScreen() {
   const [posts, setPosts] = useState<PostItem[]>([]);
   const [imageCountByPostId, setImageCountByPostId] = useState<Record<string, number>>({});
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [gridWidth, setGridWidth] = useState(0);
+
+  const cardWidth =
+    gridWidth > 0
+      ? Math.floor((gridWidth - gridGap * (gridColumns - 1)) / gridColumns)
+      : undefined;
 
   useEffect(() => {
     let isMounted = true;
@@ -148,18 +154,7 @@ export default function ProfileScreen() {
 
   return (
     <ScreenContainer scroll>
-      <AppHeader
-        title="프로필"
-        subtitle="계정 정보와 내가 올린 게시글을 한눈에 정리해서 볼 수 있습니다."
-      />
-
       <View style={styles.heroCard}>
-        <View style={styles.heroText}>
-          <Text style={styles.name}>{profile.name}</Text>
-          <Text style={styles.followers}>팔로워 {profile.followerCount}</Text>
-          <Text style={styles.email}>{profile.email || 'No email available'}</Text>
-        </View>
-
         {profile.avatarUrl ? (
           <Image source={{ uri: profile.avatarUrl }} style={styles.profileImage} contentFit="cover" />
         ) : (
@@ -167,22 +162,22 @@ export default function ProfileScreen() {
             <Text style={styles.avatarText}>{getInitials(profile.name) || 'SP'}</Text>
           </View>
         )}
-      </View>
+        <Text style={styles.name}>{profile.name}</Text>
+        <Text style={styles.email}>{profile.email || ''}</Text>
 
-      <View style={styles.infoPanel}>
-        <Text style={styles.infoTitle}>계정 상태</Text>
-        <View style={styles.infoPillRow}>
-          <View style={styles.infoPill}>
-            <Text style={styles.infoPillText}>Google 로그인 연결 완료</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{posts.length}</Text>
+            <Text style={styles.statLabel}>게시글</Text>
           </View>
-          <View style={styles.infoPill}>
-            <Text style={styles.infoPillText}>세션 자동 유지 활성화</Text>
-          </View>
-          <View style={styles.infoPill}>
-            <Text style={styles.infoPillText}>재실행 후 로그인 상태 확인 가능</Text>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{profile.followerCount}</Text>
+            <Text style={styles.statLabel}>팔로워</Text>
           </View>
         </View>
       </View>
+
 
       <Pressable
         style={styles.stressReportsButton}
@@ -198,6 +193,7 @@ export default function ProfileScreen() {
       </Pressable>
 
       <View style={styles.feedPanel}>
+        <Text style={styles.feedTitle}>내 게시글</Text>
         {isLoadingPosts ? (
           <View style={styles.stateWrap}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -206,15 +202,23 @@ export default function ProfileScreen() {
         ) : null}
 
         {!isLoadingPosts && posts.length === 0 ? (
-          <Text style={styles.stateText}>아직 작성한 게시글이 없습니다.</Text>
+          <View style={styles.emptyState}>
+            <Ionicons name="camera-outline" size={48} color={colors.border} />
+            <Text style={styles.stateText}>아직 작성한 게시글이 없습니다.</Text>
+          </View>
         ) : null}
 
         {!isLoadingPosts && posts.length > 0 ? (
-          <View style={styles.grid}>
+          <View
+            style={styles.grid}
+            onLayout={(event) => {
+              const nextWidth = Math.floor(event.nativeEvent.layout.width);
+              setGridWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+            }}>
             {posts.map((post) => (
               <TouchableOpacity
                 key={post.id}
-                style={[styles.gridCard, { width: cardWidth }]}
+                style={[styles.gridCard, cardWidth ? { width: cardWidth } : null]}
                 activeOpacity={0.85}
                 onPress={() =>
                   router.push({ pathname: '/posts/[id]', params: { id: post.id } })
@@ -254,10 +258,8 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   heroCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    padding: 22,
+    alignItems: 'center',
+    padding: 24,
     borderRadius: 28,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -267,26 +269,18 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
-    gap: 16,
-  },
-  heroText: {
-    flex: 1,
-    gap: 6,
+    gap: 8,
   },
   name: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '800',
     color: colors.primaryStrong,
-  },
-  followers: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
+    textAlign: 'center',
   },
   email: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
     color: colors.textMuted,
+    textAlign: 'center',
   },
   profileImage: {
     width: 96,
@@ -304,35 +298,6 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 28,
     fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  infoPanel: {
-    padding: 18,
-    borderRadius: 24,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  infoPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  infoPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceMuted,
-  },
-  infoPillText: {
-    fontSize: 13,
-    fontWeight: '700',
     color: colors.primaryStrong,
   },
   stressReportsButton: {
@@ -388,7 +353,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   gridCard: {
     overflow: 'hidden',
@@ -434,17 +399,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.primaryStrong,
   },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+    marginTop: 8,
+  },
+  statItem: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
+  },
+  feedTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 24,
+  },
   signOutButton: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
     borderRadius: 18,
-    backgroundColor: colors.primaryStrong,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   signOutButtonText: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: '700',
+    color: colors.danger,
   },
   disabled: {
     opacity: 0.7,

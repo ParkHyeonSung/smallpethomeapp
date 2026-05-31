@@ -8,7 +8,6 @@ import {
   PanResponder,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import type { GestureResponderHandlers } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import SimulationPreview from '@/src/components/simulation/SimulationPreview';
@@ -47,6 +47,7 @@ export default function SimulationDetailScreen() {
   const params = useLocalSearchParams();
   const simulationId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const previewHeight = Math.max(360, height - 245);
 
   const [simulation, setSimulation] = useState<CageSimulationItem | null>(null);
@@ -541,7 +542,9 @@ export default function SimulationDetailScreen() {
         ) : null}
       </View>
 
-      <View style={styles.floatingHeader} pointerEvents="box-none">
+      <View
+        style={[styles.floatingHeader, { top: Math.max(insets.top + 14, 18) }]}
+        pointerEvents="box-none">
         <Pressable style={styles.circleButton} onPress={handleBackPress} hitSlop={10}>
           <Ionicons name="chevron-back" size={21} color={colors.text} />
         </Pressable>

@@ -1,12 +1,12 @@
 import { PropsWithChildren, ReactElement } from 'react';
 import {
   RefreshControlProps,
-  SafeAreaView,
   ScrollView,
   StyleProp,
   StyleSheet,
   ViewStyle,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/src/constants/colors';
 
@@ -24,7 +24,7 @@ export default function ScreenContainer({
 }: ScreenContainerProps) {
   if (scroll) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           contentContainerStyle={[styles.scrollContent, contentStyle]}
           showsVerticalScrollIndicator={false}
@@ -36,7 +36,7 @@ export default function ScreenContainer({
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, styles.content, contentStyle]}>
+    <SafeAreaView style={[styles.safeArea, styles.content, contentStyle]} edges={['top']}>
       {children}
     </SafeAreaView>
   );
@@ -49,11 +49,10 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingBottom: 18,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 18,
     paddingBottom: 40,
     gap: 18,
   },

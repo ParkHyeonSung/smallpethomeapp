@@ -1,3 +1,5 @@
+import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
+
 export type TrafficLevel = 'low' | 'medium' | 'high';
 
 export type StressMeasurementMode = 'current' | 'peak';
@@ -28,14 +30,7 @@ export type StressDiagnosisSignalCode =
   | 'vibration_low'
   | 'vibration_medium'
   | 'vibration_high'
-  | 'traffic_medium'
-  | 'traffic_high'
-  | 'cage_small'
-  | 'hideout_missing'
-  | 'ventilation_unstable'
-  | 'direct_sunlight'
-  | 'near_speaker'
-  | 'unstable_floor';
+  | 'direct_sunlight';
 
 export type StressDiagnosisSignal = {
   code: StressDiagnosisSignalCode;
@@ -169,12 +164,11 @@ function buildSignals(input: StressDiagnosisInput) {
   const signals: StressDiagnosisSignal[] = [];
   const strengths: string[] = [];
   const recommendations: string[] = [];
+  const animalGroup = resolveStressAnimalGroup(input.species);
 
   const noiseBand = getNoiseBand(clamp(input.ambientNoiseDb, 0, 140));
   signals.push(noiseBand.signal);
   recommendations.push(noiseBand.recommendation);
-
-  const cagePenalty = 0;
 
   if (input.vibrationLevel >= 7) {
     signals.push({
@@ -205,16 +199,23 @@ function buildSignals(input: StressDiagnosisInput) {
   if (input.directSunlight) {
     signals.push({
       code: 'direct_sunlight',
-      severity: 'warning',
-      title: '직사광선 노출 가능성',
-      detail: '열 축적과 과도한 밝기 자극으로 이어질 수 있습니다.',
+      severity: animalGroup.group === 'reptile' ? 'caution' : 'warning',
+      title:
+        animalGroup.group === 'reptile'
+          ? '직사광선 환경은 종별 확인 필요'
+          : '피할 공간 없는 직사광선 노출 가능성',
+      detail: animalGroup.directSunlightNote,
     });
-    recommendations.push('직사광선이 직접 닿지 않는 위치로 옮기거나 차광 대책을 고려해 주세요.');
+    recommendations.push(
+      animalGroup.group === 'reptile'
+        ? '파충류는 종에 따라 빛과 열 요구가 다르므로, 은신처와 온도 구배가 충분한지 함께 확인해 주세요.'
+        : '직사광선이 직접 닿지 않거나 회피 공간이 확보되는 위치인지 다시 확인해 주세요.'
+    );
   }
 
   return {
+    animalGroup,
     noiseBand,
-    cagePenalty,
     signals,
     strengths,
     recommendations: Array.from(new Set(recommendations)),
@@ -223,13 +224,12 @@ function buildSignals(input: StressDiagnosisInput) {
 
 export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressDiagnosisReport {
   const measurementMode = input.measurementMode ?? 'current';
-  const { noiseBand, cagePenalty, signals, recommendations } = buildSignals(input);
+  const { animalGroup, noiseBand, signals, recommendations } = buildSignals(input);
 
   let score = 0;
   score += noiseBand.penalty;
-  score += cagePenalty;
   score += clamp(input.vibrationLevel, 0, 10) * 1.8;
-  if (input.directSunlight) score += 8;
+  if (input.directSunlight) score += animalGroup.directSunlightPenalty;
 
   const roundedScore = clamp(Math.round(score), 0, 100);
 

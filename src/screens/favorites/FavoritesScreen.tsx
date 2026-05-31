@@ -25,11 +25,18 @@ export default function FavoritesScreen() {
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
-  const cardWidth = isMobile ? '31.5%' : '18.6%';
+  const gridColumns = isMobile ? 3 : 5;
+  const gridGap = 14;
 
   const [posts, setPosts] = useState<PostItem[]>([]);
   const [imageCountByPostId, setImageCountByPostId] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [gridWidth, setGridWidth] = useState(0);
+
+  const cardWidth =
+    gridWidth > 0
+      ? Math.floor((gridWidth - gridGap * (gridColumns - 1)) / gridColumns)
+      : undefined;
 
   useEffect(() => {
     if (!isFocused) return;
@@ -59,10 +66,7 @@ export default function FavoritesScreen() {
 
   return (
     <ScreenContainer scroll>
-      <AppHeader
-        title="좋아요"
-        subtitle="마음에 들어 저장해둔 게시글을 한곳에서 다시 볼 수 있습니다."
-      />
+      <AppHeader title="좋아요" />
 
       {isLoading ? (
         <View style={styles.statePanel}>
@@ -73,17 +77,23 @@ export default function FavoritesScreen() {
 
       {!isLoading && posts.length === 0 ? (
         <View style={styles.statePanel}>
+          <Ionicons name="heart-outline" size={48} color={colors.border} />
           <Text style={styles.stateTitle}>좋아요한 게시글이 없습니다.</Text>
           <Text style={styles.stateText}>마음에 드는 게시글에 하트를 눌러 저장해보세요.</Text>
         </View>
       ) : null}
 
       {!isLoading && posts.length > 0 ? (
-        <View style={styles.grid}>
+        <View
+          style={styles.grid}
+          onLayout={(event) => {
+            const nextWidth = Math.floor(event.nativeEvent.layout.width);
+            setGridWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+          }}>
           {posts.map((post) => (
             <Pressable
               key={post.id}
-              style={[styles.gridCard, { width: cardWidth }]}
+              style={[styles.gridCard, cardWidth ? { width: cardWidth } : null]}
               onPress={() =>
                 router.push({ pathname: '/posts/[id]', params: { id: post.id } })
               }>
@@ -141,7 +151,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   gridCard: {
     overflow: 'hidden',

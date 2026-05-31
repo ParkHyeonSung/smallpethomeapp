@@ -1,9 +1,10 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function RootLayout() {
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="dark" backgroundColor="#F5F1E8" translucent={false} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
@@ -14,6 +15,6 @@ export default function RootLayout() {
         <Stack.Screen name="posts/[id]" />
         <Stack.Screen name="posts/edit/[id]" />
       </Stack>
-    </>
+    </SafeAreaProvider>
   );
 }

@@ -31,7 +31,14 @@ export default function SearchScreen() {
   const trimmedQuery = deferredQuery.trim();
   const hasQuery = trimmedQuery.length > 0;
   const isMobile = width < 768;
-  const cardWidth = isMobile ? '31.5%' : '18.6%';
+  const gridColumns = isMobile ? 3 : 5;
+  const gridGap = 14;
+  const [gridWidth, setGridWidth] = useState(0);
+
+  const cardWidth =
+    gridWidth > 0
+      ? Math.floor((gridWidth - gridGap * (gridColumns - 1)) / gridColumns)
+      : undefined;
 
   useEffect(() => {
     if (!hasQuery) {
@@ -66,19 +73,19 @@ export default function SearchScreen() {
 
   return (
     <ScreenContainer scroll>
-      <AppHeader
-        title="검색"
-        subtitle="작성자 이름이나 게시글 내용으로 원하는 게시글을 빠르게 찾아보세요."
-      />
+      <AppHeader title="검색" />
 
       <View style={styles.searchShell}>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="궁금한 키워드를 입력해보세요"
-          placeholderTextColor={colors.textMuted}
-          style={styles.searchInput}
-        />
+        <View style={styles.searchInputRow}>
+          <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="궁금한 키워드를 입력해보세요"
+            placeholderTextColor={colors.textMuted}
+            style={styles.searchInput}
+          />
+        </View>
       </View>
 
       <View style={styles.panel}>
@@ -104,17 +111,23 @@ export default function SearchScreen() {
 
       {hasQuery && !isLoading && results.length === 0 ? (
         <View style={styles.statePanel}>
+          <Ionicons name="search-outline" size={48} color={colors.border} />
           <Text style={styles.stateTitle}>검색 결과가 없습니다.</Text>
           <Text style={styles.stateText}>다른 검색어로 다시 시도해보세요.</Text>
         </View>
       ) : null}
 
       {hasQuery && !isLoading && results.length > 0 ? (
-        <View style={styles.grid}>
+        <View
+          style={styles.grid}
+          onLayout={(event) => {
+            const nextWidth = Math.floor(event.nativeEvent.layout.width);
+            setGridWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+          }}>
           {results.map((post) => (
             <Pressable
               key={post.id}
-              style={[styles.card, { width: cardWidth }]}
+              style={[styles.card, cardWidth ? { width: cardWidth } : null]}
               onPress={() =>
                 router.push({ pathname: '/posts/[id]', params: { id: post.id } })
               }>
@@ -153,13 +166,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  searchInput: {
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 18,
     paddingVertical: 16,
     borderRadius: 18,
     backgroundColor: colors.surface,
+  },
+  searchInput: {
+    flex: 1,
     fontSize: 15,
     color: colors.text,
+    paddingVertical: 0,
   },
   panel: {
     padding: 18,
@@ -223,7 +243,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   card: {
     overflow: 'hidden',

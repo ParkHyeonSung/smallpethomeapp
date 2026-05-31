@@ -16,7 +16,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -871,7 +870,7 @@ const styles = StyleSheet.create({
   menuButton: {
     width: 44,
     height: 44,
-    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
+    marginTop: 4,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -880,7 +879,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   brandTitle: {
-    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
+    marginTop: 4,
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: 2.4,
@@ -889,7 +888,7 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 44,
     height: 44,
-    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 2 : 4,
+    marginTop: 4,
   },
   featureMenuOverlay: {
     flex: 1,

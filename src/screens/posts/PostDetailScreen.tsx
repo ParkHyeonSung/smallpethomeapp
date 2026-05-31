@@ -18,6 +18,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import CommentRow from '@/src/components/comments/CommentRow';
 import { colors } from '@/src/constants/colors';
@@ -41,6 +42,7 @@ export default function PostDetailScreen() {
   const postId = typeof idParam === 'string' && idParam.length > 0 ? idParam : fallbackId;
 
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isDesktopWeb = Platform.OS === 'web' && width >= 1024;
   const commentSheetY = useRef(new Animated.Value(COMMENT_SHEET_Y)).current;
   const imageScrollRef = useRef<ScrollView | null>(null);
@@ -388,7 +390,7 @@ export default function PostDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, !isDesktopWeb && { paddingTop: Math.max(insets.top + 10, 18) }]}>
         <Pressable style={styles.iconButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
@@ -396,7 +398,12 @@ export default function PostDetailScreen() {
         <View style={styles.spacer} />
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, isDesktopWeb && styles.contentDesktop]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          !isDesktopWeb && styles.contentMobile,
+          isDesktopWeb && styles.contentDesktop,
+        ]}>
         <View style={[styles.card, isDesktopWeb && styles.cardDesktop]}>
           <View style={[styles.media, isDesktopWeb && styles.mediaDesktop]}>
             {displayImages.length > 0 ? (
@@ -700,6 +707,7 @@ const styles = StyleSheet.create({
   spacer: { width: 40 },
   topTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
   content: { padding: 16 },
+  contentMobile: { paddingTop: 8 },
   contentDesktop: { minHeight: '100%', alignItems: 'center', justifyContent: 'center' },
   card: { gap: 16 },
   cardDesktop: { width: '100%', maxWidth: 1400, minHeight: 820, flexDirection: 'row', gap: 0, overflow: 'hidden', borderRadius: 24, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },

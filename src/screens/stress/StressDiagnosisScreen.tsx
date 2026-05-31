@@ -10,13 +10,17 @@ import {
 } from 'expo-audio';
 import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import { buildStressAiPayload, buildStressAiPreview, StressAiPreview } from '@/src/lib/stress-ai';
-import { buildStressDiagnosisReport, StressDiagnosisReport } from '@/src/lib/stress-diagnosis';
+import {
+  buildStressDiagnosisReport,
+  StressDiagnosisInput,
+  StressDiagnosisReport,
+} from '@/src/lib/stress-diagnosis';
 import { saveStressReport } from '@/src/lib/stress-reports';
 
 const LEVEL_META: Record<
@@ -40,12 +44,29 @@ const LEVEL_META: Record<
   },
 };
 
-const MEASUREMENT_MS = 4000;
-
 const recorderOptions = {
   ...RecordingPresets.LOW_QUALITY,
   isMeteringEnabled: true,
 };
+
+const MEASUREMENT_OPTIONS = {
+  quick: {
+    label: '빠른 측정',
+    durationSec: 60,
+    description: '현재 환경을 빠르게 확인합니다.',
+  },
+  precise: {
+    label: '정밀 측정',
+    durationSec: 600,
+    description: '더 길게 측정해 환경 변동을 더 많이 반영합니다.',
+  },
+} as const;
+
+const SPECIES_OPTIONS = ['설치류', '기니피그류', '토끼류', '파충류', '기타 소형 포유류'] as const;
+const VIBRATION_SAMPLE_INTERVAL_MS = 20;
+
+type MeasurementType = keyof typeof MEASUREMENT_OPTIONS;
+type Step = 'select' | 'sunlight' | 'measuring' | 'result';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -97,6 +118,22 @@ function BooleanField({ label, value, onChange }: BooleanFieldProps) {
   );
 }
 
+function formatDurationLabel(durationSec: number) {
+  if (durationSec >= 60) {
+    const minutes = Math.round(durationSec / 60);
+    return `약 ${minutes}분 소요`;
+  }
+
+  return `약 ${durationSec}초 소요`;
+}
+
+function formatCountdown(seconds: number) {
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  const remainder = safe % 60;
+  return `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
 export default function StressDiagnosisScreen() {
   const isWeb = Platform.OS === 'web';
   const audioRecorder = useAudioRecorder(recorderOptions);
@@ -104,14 +141,17 @@ export default function StressDiagnosisScreen() {
 
   const vibrationSubscriptionRef = useRef<ReturnType<typeof Accelerometer.addListener> | null>(null);
   const latestMeteringRef = useRef<number | null>(null);
+  const measurementRunIdRef = useRef(0);
 
-  const [species, setSpecies] = useState('햄스터');
+  const [step, setStep] = useState<Step>('select');
+  const [measurementType, setMeasurementType] = useState<MeasurementType>('quick');
+  const [species, setSpecies] = useState<(typeof SPECIES_OPTIONS)[number]>('설치류');
   const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
   const [vibrationLevel, setVibrationLevel] = useState(0);
   const [directSunlight, setDirectSunlight] = useState(false);
 
   const [permissionStatusText, setPermissionStatusText] = useState(
-    '측정 시작을 누르면 마이크와 센서 권한을 확인한 뒤 소음과 진동을 연속 측정합니다.'
+    '측정을 시작하면 마이크와 센서 권한을 확인한 뒤 소음과 진동을 순서대로 측정합니다.'
   );
   const [microphoneReady, setMicrophoneReady] = useState(false);
   const [motionReady, setMotionReady] = useState(false);
@@ -124,32 +164,33 @@ export default function StressDiagnosisScreen() {
   const [isMeasuringVibration, setIsMeasuringVibration] = useState(false);
   const [hasMeasuredNoise, setHasMeasuredNoise] = useState(false);
   const [hasMeasuredVibration, setHasMeasuredVibration] = useState(false);
-  const [hasRunDiagnosis, setHasRunDiagnosis] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [isRunningMeasurement, setIsRunningMeasurement] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [aiPreview, setAiPreview] = useState<StressAiPreview | null>(null);
 
-  const diagnosisInput = useMemo(
+  const selectedOption = MEASUREMENT_OPTIONS[measurementType];
+
+  const diagnosisInput = useMemo<StressDiagnosisInput>(
     () => ({
       species,
       cageWidthCm: null,
       cageDepthCm: null,
       ambientNoiseDb: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
       vibrationLevel,
-      trafficLevel: 'low' as const,
+      trafficLevel: 'low',
       hideoutReady: true,
       ventilationReady: true,
       directSunlight,
       nearSpeaker: false,
       unstableFloor: false,
-      measurementMode: 'current' as const,
+      measurementMode: measurementType === 'precise' ? 'peak' : 'current',
     }),
-    [ambientNoiseDb, directSunlight, species, vibrationLevel]
+    [ambientNoiseDb, directSunlight, measurementType, species, vibrationLevel]
   );
 
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
-
-  const canSaveReport = hasMeasuredNoise && hasMeasuredVibration && hasRunDiagnosis;
+  const canSaveReport = step === 'result' && hasMeasuredNoise && hasMeasuredVibration;
 
   useEffect(() => {
     if (!isMeasuringNoise || recorderState.metering === undefined) {
@@ -172,12 +213,23 @@ export default function StressDiagnosisScreen() {
     }
 
     const payload = buildStressAiPayload(diagnosisInput, {
-      measurementDurationSec: 8,
+      measurementDurationSec: selectedOption.durationSec,
       report,
     });
-
     setAiPreview(buildStressAiPreview(payload));
-  }, [canSaveReport, diagnosisInput, report]);
+  }, [canSaveReport, diagnosisInput, report, selectedOption.durationSec]);
+
+  useEffect(() => {
+    if (!isRunningMeasurement) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setRemainingSeconds((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isRunningMeasurement]);
 
   const ensureMeasurementPermissions = async () => {
     const microphonePermission = await AudioModule.requestRecordingPermissionsAsync();
@@ -193,7 +245,7 @@ export default function StressDiagnosisScreen() {
     setMotionReady(motionGranted);
 
     if (microphoneGranted && motionGranted) {
-      setPermissionStatusText('권한 확인이 완료되어 바로 측정을 진행할 수 있어요.');
+      setPermissionStatusText('권한 확인이 완료되어 측정을 진행할 수 있어요.');
       return true;
     }
 
@@ -211,13 +263,27 @@ export default function StressDiagnosisScreen() {
     return false;
   };
 
-  const measureNoise = async () => {
+  const measureNoiseAndVibration = async (durationMs: number) => {
     latestMeteringRef.current = null;
     setHasMeasuredNoise(false);
+    setHasMeasuredVibration(false);
     setIsMeasuringNoise(true);
+    setIsMeasuringVibration(true);
     setNoiseMeasurementLabel('소음을 측정하고 있어요...');
+    setVibrationMeasurementLabel('진동을 측정하고 있어요...');
 
     try {
+      const isAvailable = await Accelerometer.isAvailableAsync();
+      if (!isAvailable) {
+        setVibrationMeasurementLabel('이 기기에서는 진동 센서를 사용할 수 없어요.');
+        return { noise: null, vibration: null };
+      }
+
+      const samples: number[] = [];
+      // Use a denser sampling interval so short low-amplitude vibrations are less likely
+      // to be lost than they were with the previous coarse 100 ms polling.
+      Accelerometer.setUpdateInterval(VIBRATION_SAMPLE_INTERVAL_MS);
+
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
@@ -226,45 +292,6 @@ export default function StressDiagnosisScreen() {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
 
-      await sleep(MEASUREMENT_MS);
-      await audioRecorder.stop();
-
-      const metering = latestMeteringRef.current;
-      if (metering === null) {
-        setNoiseMeasurementLabel('유효한 소음 값을 읽지 못했어요. 다시 측정해 주세요.');
-        return null;
-      }
-
-      const estimatedDb = mapMeteringToDb(metering);
-      setAmbientNoiseDb(String(estimatedDb));
-      setHasMeasuredNoise(true);
-      setNoiseMeasurementLabel(`${estimatedDb} dB로 측정되었어요.`);
-      return estimatedDb;
-    } catch (error) {
-      setNoiseMeasurementLabel(
-        error instanceof Error ? error.message : '소음 측정 중 문제가 발생했어요.'
-      );
-      return null;
-    } finally {
-      setIsMeasuringNoise(false);
-    }
-  };
-
-  const measureVibration = async () => {
-    setHasMeasuredVibration(false);
-    setIsMeasuringVibration(true);
-    setVibrationMeasurementLabel('진동을 측정하고 있어요...');
-
-    try {
-      const isAvailable = await Accelerometer.isAvailableAsync();
-      if (!isAvailable) {
-        setVibrationMeasurementLabel('이 기기에서는 진동 센서를 사용할 수 없어요.');
-        return null;
-      }
-
-      const samples: number[] = [];
-      Accelerometer.setUpdateInterval(100);
-
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = Accelerometer.addListener(({ x, y, z }) => {
         const magnitude = Math.sqrt(x * x + y * y + z * z);
@@ -272,14 +299,27 @@ export default function StressDiagnosisScreen() {
         samples.push(deltaFromGravity);
       });
 
-      await sleep(MEASUREMENT_MS);
+      await sleep(durationMs);
+
+      await audioRecorder.stop();
 
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = null;
 
+      const metering = latestMeteringRef.current;
+      let estimatedDb: number | null = null;
+      if (metering === null) {
+        setNoiseMeasurementLabel('유효한 소음 값을 읽지 못했어요. 다시 측정해 주세요.');
+      } else {
+        estimatedDb = mapMeteringToDb(metering);
+        setAmbientNoiseDb(String(estimatedDb));
+        setHasMeasuredNoise(true);
+        setNoiseMeasurementLabel(`${estimatedDb} dB로 측정됐어요.`);
+      }
+
       if (!samples.length) {
         setVibrationMeasurementLabel('유효한 진동 값을 읽지 못했어요. 다시 측정해 주세요.');
-        return null;
+        return { noise: estimatedDb, vibration: null };
       }
 
       const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
@@ -287,42 +327,95 @@ export default function StressDiagnosisScreen() {
 
       setVibrationLevel(level);
       setHasMeasuredVibration(true);
-      setVibrationMeasurementLabel(`${getVibrationBandLabel(level)} (${level}/10)으로 측정되었어요.`);
-      return level;
+      setVibrationMeasurementLabel(`${getVibrationBandLabel(level)} (${level}/10)로 측정됐어요.`);
+      return { noise: estimatedDb, vibration: level };
     } catch (error) {
+      setNoiseMeasurementLabel(
+        error instanceof Error ? error.message : '소음 측정 중 문제가 발생했어요.'
+      );
       setVibrationMeasurementLabel(
         error instanceof Error ? error.message : '진동 측정 중 문제가 발생했어요.'
       );
-      return null;
+      return { noise: null, vibration: null };
     } finally {
+      try {
+        if (audioRecorder.isRecording) {
+          await audioRecorder.stop();
+        }
+      } catch {}
+
+      vibrationSubscriptionRef.current?.remove();
+      vibrationSubscriptionRef.current = null;
       setIsMeasuringVibration(false);
+      setIsMeasuringNoise(false);
     }
   };
 
-  const handleStartMeasurement = async () => {
+  const startMeasurementFlow = async () => {
     if (isWeb) {
       Alert.alert('모바일 전용 기능', '스트레스 진단은 휴대폰 앱에서만 사용할 수 있습니다.');
       return;
     }
 
+    const runId = measurementRunIdRef.current + 1;
+    measurementRunIdRef.current = runId;
+
     try {
       setIsRunningMeasurement(true);
-      setHasRunDiagnosis(false);
+      setHasMeasuredNoise(false);
+      setHasMeasuredVibration(false);
+      setAmbientNoiseDb('');
+      setVibrationLevel(0);
+      setAiPreview(null);
+      setStep('measuring');
+      setRemainingSeconds(selectedOption.durationSec);
+      setNoiseMeasurementLabel('소음을 측정하고 있어요...');
+      setVibrationMeasurementLabel('진동을 측정하고 있어요...');
 
       const permissionsReady = await ensureMeasurementPermissions();
       if (!permissionsReady) {
+        setStep('sunlight');
         return;
       }
 
-      const noise = await measureNoise();
-      const vibration = await measureVibration();
+      const totalDurationMs = selectedOption.durationSec * 1000;
+      const result = await measureNoiseAndVibration(totalDurationMs);
 
-      if (noise !== null && vibration !== null) {
-        setHasRunDiagnosis(true);
+      if (measurementRunIdRef.current !== runId) {
+        return;
+      }
+
+      if (result.noise !== null && result.vibration !== null) {
+        setStep('result');
+      } else {
+        setStep('sunlight');
       }
     } finally {
+      if (measurementRunIdRef.current === runId) {
+        setRemainingSeconds(0);
+      }
       setIsRunningMeasurement(false);
     }
+  };
+
+  const handleSelectMeasurement = (nextType: MeasurementType) => {
+    setMeasurementType(nextType);
+    setStep('sunlight');
+  };
+
+  const handleReset = () => {
+    measurementRunIdRef.current += 1;
+    setStep('select');
+    setAmbientNoiseDb('');
+    setVibrationLevel(0);
+    setDirectSunlight(false);
+    setHasMeasuredNoise(false);
+    setHasMeasuredVibration(false);
+    setIsRunningMeasurement(false);
+    setRemainingSeconds(0);
+    setAiPreview(null);
+    setNoiseMeasurementLabel('아직 소음 측정을 진행하지 않았어요.');
+    setVibrationMeasurementLabel('아직 진동 측정을 진행하지 않았어요.');
   };
 
   const handleSaveReport = async () => {
@@ -333,12 +426,10 @@ export default function StressDiagnosisScreen() {
 
     try {
       setIsSavingReport(true);
-
       await saveStressReport({
         diagnosisInput,
         report,
       });
-
       Alert.alert('저장 완료', '진단 결과가 저장되었어요.');
     } catch (error) {
       Alert.alert(
@@ -362,15 +453,11 @@ export default function StressDiagnosisScreen() {
 
           <View style={styles.mobileOnlyCard}>
             <Ionicons name="phone-portrait-outline" size={34} color={colors.primaryStrong} />
-            <Text style={styles.mobileOnlyTitle}>모바일 앱에서만 사용할 수 있어요.</Text>
+            <Text style={styles.mobileOnlyTitle}>모바일 앱에서만 사용할 수 있어요</Text>
             <Text style={styles.mobileOnlyText}>
-              스트레스 진단은 휴대폰의 마이크와 가속도 센서를 사용하므로 PC 웹에서는 실행할 수 없어요.
+              스트레스 진단은 휴대폰의 마이크와 가속도 센서를 사용하므로 PC 웹에서는 실행할 수
+              없어요.
             </Text>
-            <Pressable
-              style={styles.recordsButton}
-              onPress={() => router.push('/stress-reports' as never)}>
-              <Text style={styles.recordsButtonText}>진단 기록 보기</Text>
-            </Pressable>
           </View>
         </View>
       </ScreenContainer>
@@ -379,129 +466,128 @@ export default function StressDiagnosisScreen() {
 
   return (
     <ScreenContainer>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.container}>
         <View style={styles.topRow}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
           <AppHeader
             title="입주 전 환경 적합성 진단"
-            subtitle="소음과 진동을 먼저 측정하고 직사광선 여부만 보정합니다."
+            subtitle="소음과 진동을 측정하고 결과를 바로 확인합니다."
           />
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>측정 시작</Text>
-          <Text style={styles.heroDuration}>약 8초 소요</Text>
-          <Pressable
-            style={[styles.heroActionButton, isRunningMeasurement && styles.measureButtonDisabled]}
-            onPress={() => void handleStartMeasurement()}
-            disabled={isRunningMeasurement}>
-            <Text style={styles.heroActionButtonText}>
-              {isRunningMeasurement ? '측정 중...' : '측정 시작'}
+        {step === 'select' ? (
+          <View style={styles.centerCard}>
+            <Text style={styles.eyebrow}>Stress Check</Text>
+            <Text style={styles.centerTitle}>측정 방식을 선택해 주세요.</Text>
+            <Text style={styles.centerDescription}>
+              현재 환경을 빠르게 확인하거나 더 길게 측정해 환경 변동을 더 많이 반영할 수 있어요.
             </Text>
-          </Pressable>
-          <Text style={styles.heroHint}>
-            더 정확한 확인이 필요하면 소음이나 진동이 큰 시간대에 한 번 더 측정해 보세요.
-          </Text>
-        </View>
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>측정 상태</Text>
-          <Text style={styles.statusDescription}>{permissionStatusText}</Text>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusBadge, microphoneReady && styles.statusBadgeActive]}>
-              <Text style={[styles.statusBadgeText, microphoneReady && styles.statusBadgeTextActive]}>
-                마이크 {microphoneReady ? '허용됨' : '대기중'}
-              </Text>
-            </View>
-            <View style={[styles.statusBadge, motionReady && styles.statusBadgeActive]}>
-              <Text style={[styles.statusBadgeText, motionReady && styles.statusBadgeTextActive]}>
-                센서 {motionReady ? '허용됨' : '대기중'}
-              </Text>
+            <View style={styles.optionList}>
+              {(['quick', 'precise'] as const).map((optionKey) => {
+                const option = MEASUREMENT_OPTIONS[optionKey];
+                return (
+                  <Pressable
+                    key={optionKey}
+                    style={styles.optionButton}
+                    onPress={() => handleSelectMeasurement(optionKey)}>
+                    <View style={styles.optionButtonTextWrap}>
+                      <Text style={styles.optionButtonTitle}>{option.label}</Text>
+                      <Text style={styles.optionButtonDescription}>{option.description}</Text>
+                    </View>
+                    <View style={styles.optionButtonMeta}>
+                      <Text style={styles.optionButtonDuration}>{formatDurationLabel(option.durationSec)}</Text>
+                      <Ionicons name="chevron-forward" size={18} color={colors.primaryStrong} />
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>기본 정보</Text>
-          <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>동물 종류</Text>
-            <TextInput
-              value={species}
-              onChangeText={setSpecies}
-              placeholder="예: 햄스터"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
+        {step === 'sunlight' ? (
+          <View style={styles.centerCard}>
+            <Text style={styles.eyebrow}>{selectedOption.label}</Text>
+            <Text style={styles.centerTitle}>{selectedOption.label} 전 확인</Text>
+            <Text style={styles.centerDescription}>
+              동물 종류를 선택하고 직사광선 조건만 먼저 반영할게요.
+            </Text>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>동물 종류</Text>
+              <View style={styles.speciesOptionList}>
+                {SPECIES_OPTIONS.map((option) => {
+                  const active = species === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      style={[styles.speciesOptionChip, active && styles.speciesOptionChipActive]}
+                      onPress={() => setSpecies(option)}>
+                      <Text
+                        style={[
+                          styles.speciesOptionChipText,
+                          active && styles.speciesOptionChipTextActive,
+                        ]}>
+                        {option}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <BooleanField
+              label="직사광선이 직접 들어오고 피할 공간이 없나요?"
+              value={directSunlight}
+              onChange={setDirectSunlight}
             />
+
+            <Pressable style={styles.primaryButton} onPress={() => void startMeasurementFlow()}>
+              <Text style={styles.primaryButtonText}>{selectedOption.label} 시작</Text>
+            </Pressable>
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>측정 결과</Text>
+        {step === 'measuring' ? (
+          <View style={styles.centerCard}>
+            <Text style={styles.eyebrow}>{selectedOption.label}</Text>
+            <Text style={styles.centerTitle}>{selectedOption.label} 중...</Text>
+            <Text style={styles.centerDescription}>{permissionStatusText}</Text>
 
-          <View style={styles.measureCard}>
-            <View style={styles.measureHeader}>
-              <Text style={styles.measureTitle}>소음</Text>
-              <Text style={styles.measureValue}>{ambientNoiseDb ? `${ambientNoiseDb} dB` : '미측정'}</Text>
+            <View style={styles.timerCircle}>
+              <View style={styles.timerWrap}>
+                <Ionicons name="time-outline" size={42} color={colors.primaryStrong} />
+                <Text style={styles.timerValue}>{formatCountdown(remainingSeconds)}</Text>
+              </View>
             </View>
-            <Text style={styles.measureDescription}>{noiseMeasurementLabel}</Text>
-          </View>
 
-          <View style={styles.measureCard}>
-            <View style={styles.measureHeader}>
-              <Text style={styles.measureTitle}>진동</Text>
-              <Text style={styles.measureValue}>
-                {hasMeasuredVibration ? `${getVibrationBandLabel(vibrationLevel)} (${vibrationLevel}/10)` : '미측정'}
-              </Text>
+            <View style={styles.measureSummaryCard}>
+              <Text style={styles.measureSummaryLabel}>{noiseMeasurementLabel}</Text>
+              <Text style={styles.measureSummaryLabel}>{vibrationMeasurementLabel}</Text>
             </View>
-            <Text style={styles.measureDescription}>{vibrationMeasurementLabel}</Text>
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>선택 보정</Text>
-          <BooleanField label="직사광선이 직접 들어오나요?" value={directSunlight} onChange={setDirectSunlight} />
-        </View>
-
-        {canSaveReport ? (
-          <View style={styles.reportCard}>
-            <View style={styles.reportHeader}>
+        {step === 'result' ? (
+          <View style={styles.resultCard}>
+            <Text style={styles.eyebrow}>Result</Text>
+            <View style={styles.resultHeader}>
               <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
                 <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
               </View>
-              <Text style={styles.scoreText}>총점 {report.score}점</Text>
+              <Text style={styles.modePill}>{selectedOption.label}</Text>
             </View>
 
+            <Text style={styles.resultMetrics}>
+              {report.score}점 · 소음 {ambientNoiseDb || '0'} dB · 진동 {vibrationLevel}/10
+            </Text>
+            <Text style={styles.resultInterpretation}>
+              소음 {report.noiseBandLabel} · 진동 {getVibrationBandLabel(vibrationLevel)}
+            </Text>
             <Text style={styles.reportSummary}>{report.summary}</Text>
-
-            <View style={styles.noiseBandCard}>
-              <Text style={styles.noiseBandTitle}>소음 추정 등급</Text>
-              <Text style={styles.noiseBandValue}>{report.noiseBandLabel}</Text>
-            </View>
-
-            <View style={styles.noticePill}>
-              <Ionicons name="information-circle-outline" size={16} color={colors.primaryStrong} />
-              <Text style={styles.noticePillText}>{report.measurementNotice}</Text>
-            </View>
-
-            <View style={styles.reportSection}>
-              {report.highlights.map((item) => (
-                <View key={item} style={styles.reportRow}>
-                  <Ionicons name="alert-circle-outline" size={18} color={colors.primaryStrong} />
-                  <Text style={styles.reportRowText}>{item}</Text>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.reportSection}>
-              {report.recommendations.map((item) => (
-                <View key={item} style={styles.reportRow}>
-                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.primaryStrong} />
-                  <Text style={styles.reportRowText}>{item}</Text>
-                </View>
-              ))}
-            </View>
 
             {aiPreview ? (
               <View style={styles.aiCard}>
@@ -510,26 +596,30 @@ export default function StressDiagnosisScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.inlineNotice}>
-              더 전문적으로 확인하려면 생활 소음이나 진동이 큰 시간대에 다시 측정해 보세요.
-            </Text>
-
-            <Pressable
-              style={[styles.saveReportButton, isSavingReport && styles.saveReportButtonDisabled]}
-              onPress={() => void handleSaveReport()}
-              disabled={isSavingReport}>
-              <Text style={styles.saveReportButtonText}>
-                {isSavingReport ? '저장 중...' : '진단 결과 저장하기'}
-              </Text>
-            </Pressable>
+            <View style={styles.resultActions}>
+              <Pressable style={styles.secondaryButton} onPress={handleReset}>
+                <Text style={styles.secondaryButtonText}>다시 측정</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryButton, isSavingReport && styles.buttonDisabled]}
+                onPress={() => void handleSaveReport()}
+                disabled={isSavingReport}>
+                <Text style={styles.primaryButtonText}>{isSavingReport ? '저장 중...' : '결과 저장'}</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    gap: 16,
+  },
   mobileOnlyContent: {
     flex: 1,
     padding: 20,
@@ -557,23 +647,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
-  recordsButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-  },
-  recordsButtonText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  scrollContent: {
-    padding: 20,
-    gap: 16,
-  },
   topRow: {
     gap: 14,
   },
@@ -587,81 +660,81 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  heroCard: {
-    padding: 20,
-    borderRadius: 24,
-    backgroundColor: colors.primaryStrong,
-    gap: 10,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  heroDuration: {
-    fontSize: 13,
-    color: '#D6E7DF',
-  },
-  heroActionButton: {
-    marginTop: 8,
-    minHeight: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  heroActionButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.primaryStrong,
-  },
-  heroHint: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: '#E5F0EC',
-  },
-  sectionCard: {
-    padding: 18,
-    borderRadius: 24,
+  centerCard: {
+    flex: 1,
+    padding: 26,
+    borderRadius: 28,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 16,
+    gap: 20,
+    justifyContent: 'center',
+    shadowColor: '#111111',
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    elevation: 2,
   },
-  sectionTitle: {
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  centerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  centerDescription: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  optionList: {
+    gap: 14,
+  },
+  optionButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderRadius: 24,
+    backgroundColor: '#F7F3EB',
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  optionButtonTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  optionButtonMeta: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  optionButtonTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: colors.text,
   },
-  statusDescription: {
+  optionButtonDuration: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primaryStrong,
+  },
+  optionButtonDescription: {
     fontSize: 13,
     lineHeight: 20,
     color: colors.textMuted,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  statusBadgeActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: '#B9D8CC',
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  statusBadgeTextActive: {
-    color: colors.primaryStrong,
   },
   fieldBlock: {
     gap: 8,
@@ -671,14 +744,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
-  input: {
-    minHeight: 48,
-    borderRadius: 14,
-    backgroundColor: colors.background,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  speciesOptionList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 2,
+  },
+  speciesOptionChip: {
+    minHeight: 42,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#F7F3EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speciesOptionChipActive: {
+    borderColor: colors.primaryStrong,
+    backgroundColor: colors.primaryLight,
+  },
+  speciesOptionChipText: {
     fontSize: 14,
-    color: colors.text,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  speciesOptionChipTextActive: {
+    color: colors.primaryStrong,
   },
   choiceRow: {
     flexDirection: 'row',
@@ -686,13 +778,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   choiceChip: {
-    minWidth: 70,
+    minWidth: 84,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: colors.background,
+    backgroundColor: '#F7F3EB',
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -708,118 +800,127 @@ const styles = StyleSheet.create({
   choiceChipTextActive: {
     color: colors.primaryStrong,
   },
-  measureCard: {
-    padding: 16,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceMuted,
-    gap: 10,
-  },
-  measureHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  primaryButton: {
+    minHeight: 56,
+    borderRadius: 18,
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
+    backgroundColor: colors.primaryStrong,
+    paddingHorizontal: 18,
   },
-  measureTitle: {
+  primaryButtonText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  secondaryButton: {
+    minHeight: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F7F3EB',
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 18,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
     color: colors.text,
   },
-  measureValue: {
-    fontSize: 16,
+  buttonDisabled: {
+    opacity: 0.65,
+  },
+  timerWrap: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  timerCircle: {
+    width: 210,
+    height: 210,
+    alignSelf: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D7D0C1',
+    backgroundColor: '#F7F3EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timerValue: {
+    fontSize: 36,
     fontWeight: '800',
-    color: colors.primaryStrong,
+    color: colors.text,
   },
-  measureDescription: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: colors.textMuted,
-  },
-  measureButtonDisabled: {
-    opacity: 0.6,
-  },
-  reportCard: {
+  measureSummaryCard: {
     padding: 18,
-    borderRadius: 24,
+    borderRadius: 22,
+    backgroundColor: '#F7F3EB',
+    gap: 12,
+  },
+  measureSummaryLabel: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  resultCard: {
+    flex: 1,
+    padding: 26,
+    borderRadius: 28,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 18,
+    gap: 16,
+    shadowColor: '#111111',
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    elevation: 2,
   },
-  reportHeader: {
+  resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   levelBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
   },
   levelBadgeText: {
     fontSize: 13,
     fontWeight: '700',
   },
-  scoreText: {
+  modePill: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  resultMetrics: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.text,
+    lineHeight: 34,
+  },
+  resultInterpretation: {
     fontSize: 15,
     fontWeight: '700',
-    color: colors.text,
-  },
-  reportSummary: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: colors.text,
-  },
-  noiseBandCard: {
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
-    gap: 4,
-  },
-  noiseBandTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  noiseBandValue: {
-    fontSize: 20,
-    fontWeight: '800',
     color: colors.primaryStrong,
   },
-  noticePill: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-start',
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceMuted,
-  },
-  noticePillText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textMuted,
-  },
-  reportSection: {
-    gap: 12,
-  },
-  reportRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  reportRowText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 21,
-    color: colors.textMuted,
+  reportSummary: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.text,
   },
   aiCard: {
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
-    gap: 8,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#F7F3EB',
+    gap: 10,
   },
   aiTitle: {
     fontSize: 14,
@@ -831,24 +932,8 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: colors.textMuted,
   },
-  inlineNotice: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textMuted,
-  },
-  saveReportButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: colors.primaryStrong,
-  },
-  saveReportButtonDisabled: {
-    opacity: 0.7,
-  },
-  saveReportButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  resultActions: {
+    marginTop: 'auto',
+    gap: 10,
   },
 });
