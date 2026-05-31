@@ -1,6 +1,6 @@
 import { supabase } from '@/src/lib/supabase';
 
-export type CageObjectType = 'box' | 'cylinder';
+export type CageObjectType = 'box' | 'cylinder' | 'pyramid';
 
 export type CageSimulationObject = {
   id: string;
@@ -59,7 +59,12 @@ function normalizeObjects(value: unknown): CageSimulationObject[] {
 
       return {
         id: String(object.id ?? ''),
-        type: object.type === 'cylinder' ? 'cylinder' : 'box',
+        type:
+          object.type === 'cylinder'
+            ? 'cylinder'
+            : object.type === 'pyramid'
+              ? 'pyramid'
+              : 'box',
         label: String(object.label ?? 'Object'),
         xCm: Number(object.xCm ?? 0),
         yCm: Number(object.yCm ?? 0),

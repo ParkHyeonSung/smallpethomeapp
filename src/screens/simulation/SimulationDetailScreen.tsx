@@ -42,6 +42,82 @@ type SelectedObjectScreenPosition = ScreenVector & {
     zCm: ScreenVector;
   };
 };
+type ObjectPreset = {
+  key: string;
+  type: CageObjectType;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  label: string;
+  widthCm: number;
+  depthCm: number;
+  heightCm: number;
+  color: string;
+};
+
+const OBJECT_PRESETS: ObjectPreset[] = [
+  {
+    key: 'hideout',
+    type: 'box',
+    icon: 'home-outline',
+    title: '은신처',
+    description: '작은 집이나 쉼터처럼 바로 두기 좋은 기본 프리셋',
+    label: '은신처',
+    widthCm: 18,
+    depthCm: 14,
+    heightCm: 14,
+    color: '#D6B07A',
+  },
+  {
+    key: 'water-bottle',
+    type: 'cylinder',
+    icon: 'water-outline',
+    title: '급수기',
+    description: '물병이나 급수 용품처럼 세로형으로 두기 좋은 프리셋',
+    label: '급수기',
+    widthCm: 8,
+    depthCm: 8,
+    heightCm: 18,
+    color: '#7C9CC7',
+  },
+  {
+    key: 'food-bowl',
+    type: 'cylinder',
+    icon: 'restaurant-outline',
+    title: '밥그릇',
+    description: '낮은 원형 오브젝트로 먹이 그릇 느낌을 빠르게 배치',
+    label: '밥그릇',
+    widthCm: 10,
+    depthCm: 10,
+    heightCm: 5,
+    color: '#E4B66A',
+  },
+  {
+    key: 'toilet',
+    type: 'box',
+    icon: 'cube-outline',
+    title: '화장실',
+    description: '직사각형 베이스의 기본 화장실 프리셋',
+    label: '화장실',
+    widthCm: 20,
+    depthCm: 15,
+    heightCm: 8,
+    color: '#8FB9A8',
+  },
+  {
+    key: 'platform',
+    type: 'box',
+    icon: 'layers-outline',
+    title: '선반',
+    description: '낮고 넓은 받침대나 선반 느낌으로 두기 좋은 프리셋',
+    label: '선반',
+    widthCm: 22,
+    depthCm: 12,
+    heightCm: 6,
+    color: '#C9A27E',
+  },
+];
+void OBJECT_PRESETS;
 
 export default function SimulationDetailScreen() {
   const params = useLocalSearchParams();
@@ -168,6 +244,8 @@ export default function SimulationDetailScreen() {
   };
 
   const addObject = (type: CageObjectType) => {
+    const nextLabel = preset?.label ?? (type === 'cylinder' ? '원형 배치물' : '박스 배치물');
+    void nextLabel;
     const nextObject: CageSimulationObject = {
       id: `${Date.now()}-${objects.length}`,
       type,
@@ -175,9 +253,9 @@ export default function SimulationDetailScreen() {
       xCm: Math.max(Number(cageWidthCm) / 2 || 10, 1),
       yCm: 0,
       zCm: Math.max(Number(cageDepthCm) / 2 || 10, 1),
-      widthCm: type === 'cylinder' ? 9 : 14,
-      depthCm: type === 'cylinder' ? 9 : 12,
-      heightCm: type === 'cylinder' ? 12 : 10,
+      widthCm: type === 'cylinder' ? 9 : type === 'pyramid' ? 14 : 14,
+      depthCm: type === 'cylinder' ? 9 : type === 'pyramid' ? 14 : 12,
+      heightCm: type === 'cylinder' ? 12 : type === 'pyramid' ? 16 : 10,
       rotationY: 0,
       color: OBJECT_COLORS[objects.length % OBJECT_COLORS.length],
     };
@@ -194,27 +272,6 @@ export default function SimulationDetailScreen() {
       prev.map((object) =>
         object.id === selectedObjectId ? { ...object, ...updates } : object
       )
-    );
-  };
-
-  const moveSelectedObject = (updates: Partial<Pick<CageSimulationObject, 'xCm' | 'yCm' | 'zCm'>>) => {
-    if (!selectedObjectId) return;
-
-    setObjects((prev) =>
-      prev.map((object) => {
-        if (object.id !== selectedObjectId) {
-          return object;
-        }
-
-        return {
-          ...object,
-          ...getClampedObjectPosition(object, {
-            widthCm: Number(cageWidthCm),
-            depthCm: Number(cageDepthCm),
-            heightCm: Number(cageHeightCm),
-          }, updates),
-        };
-      })
     );
   };
 
@@ -621,6 +678,12 @@ export default function SimulationDetailScreen() {
                 description="쳇바퀴, 밥그릇처럼 둥근 물건"
                 onPress={() => addObject('cylinder')}
               />
+              <PlaceCard
+                icon="triangle-outline"
+                title="삼각뿔"
+                description="기본 삼각뿔 형태 배치물"
+                onPress={() => addObject('pyramid')}
+              />
             </>
           ) : null}
 
@@ -647,35 +710,6 @@ export default function SimulationDetailScreen() {
                       onPress={() => updateSelectedObject({ color })}
                     />
                   ))}
-                </View>
-
-                <Text style={styles.groupTitle}>위치</Text>
-                <View style={styles.movePad}>
-                  <View style={styles.movePadRow}>
-                    <ControlButton label="앞" icon="arrow-up" onPress={() => moveSelectedObject({ zCm: selectedObject.zCm - 5 })} />
-                  </View>
-                  <View style={styles.movePadRow}>
-                    <ControlButton label="왼쪽" icon="arrow-back" onPress={() => moveSelectedObject({ xCm: selectedObject.xCm - 5 })} />
-                    <ControlButton label="위" icon="arrow-up-circle" onPress={() => moveSelectedObject({ yCm: selectedObject.yCm + 5 })} />
-                    <ControlButton label="오른쪽" icon="arrow-forward" onPress={() => moveSelectedObject({ xCm: selectedObject.xCm + 5 })} />
-                  </View>
-                  <View style={styles.movePadRow}>
-                    <ControlButton label="뒤" icon="arrow-down" onPress={() => moveSelectedObject({ zCm: selectedObject.zCm + 5 })} />
-                    <ControlButton label="아래" icon="arrow-down-circle" onPress={() => moveSelectedObject({ yCm: selectedObject.yCm - 5 })} />
-                  </View>
-                </View>
-
-                <Text style={styles.groupTitle}>회전</Text>
-                <View style={styles.rotateRow}>
-                  <ControlButton label="왼쪽 30도" icon="return-down-back" onPress={() => rotateSelectedObject(-1)} />
-                  <ControlButton label="오른쪽 30도" icon="return-down-forward" onPress={() => rotateSelectedObject(1)} />
-                </View>
-
-                <Text style={styles.groupTitle}>정밀 위치</Text>
-                <View style={styles.inputGrid}>
-                  <NumberInput label="X" value={selectedObject.xCm} onChange={(xCm) => updateSelectedObject({ xCm })} />
-                  <NumberInput label="Y" value={selectedObject.yCm} onChange={(yCm) => updateSelectedObject({ yCm })} />
-                  <NumberInput label="Z" value={selectedObject.zCm} onChange={(zCm) => updateSelectedObject({ zCm })} />
                 </View>
 
                 <Text style={styles.groupTitle}>크기</Text>
@@ -785,23 +819,6 @@ function PlaceCard({
       </View>
       <Text style={styles.cardTitle}>{title}</Text>
       <Text style={styles.cardDescription}>{description}</Text>
-    </Pressable>
-  );
-}
-
-function ControlButton({
-  label,
-  icon,
-  onPress,
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={styles.controlButton} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={colors.primaryStrong} />
-      <Text style={styles.controlButtonText}>{label}</Text>
     </Pressable>
   );
 }
@@ -1239,42 +1256,6 @@ const styles = StyleSheet.create({
   },
   groupTitle: {
     fontSize: 13,
-    fontWeight: '900',
-    color: colors.primaryStrong,
-  },
-  movePad: {
-    display: 'none',
-    gap: 8,
-    padding: 10,
-    borderRadius: 18,
-    backgroundColor: colors.background,
-  },
-  movePadRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  rotateRow: {
-    display: 'none',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  controlButton: {
-    flex: 1,
-    minWidth: 92,
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  controlButtonText: {
-    fontSize: 12,
     fontWeight: '900',
     color: colors.primaryStrong,
   },

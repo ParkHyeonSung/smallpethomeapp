@@ -15,7 +15,7 @@ type SimulationPreviewProps = {
   onSelectedObjectScreenPosition?: (position: SelectedObjectScreenProjection | null) => void;
   objects?: {
     id: string;
-    type: 'box' | 'cylinder';
+    type: 'box' | 'cylinder' | 'pyramid';
     xCm: number;
     yCm: number;
     zCm: number;
@@ -61,8 +61,8 @@ export default function SimulationPreview({
   const previewObjects = objects.map((object) =>
     normalizeObject(object, widthCm, depthCm, heightCm, dimensions)
   );
-  const orbit = { elevation: 0.62, yaw: -0.72 };
-  const [zoomScale, setZoomScale] = useState(1);
+  const orbit = { elevation: 0.36, yaw: -0.72 };
+  const [zoomScale, setZoomScale] = useState(0.9);
   const latestZoomRef = useRef(zoomScale);
   const pinchDistanceRef = useRef(0);
   const pinchZoomStartRef = useRef(1);
@@ -130,7 +130,7 @@ export default function SimulationPreview({
       style={[styles.container, { height: previewHeight }]}
       {...panResponder.panHandlers}
       {...webWheelHandlers}>
-      <Canvas camera={{ position: [4.5, 4.2, 5.2], fov: 42 }}>
+      <Canvas orthographic camera={{ position: [4.5, 4.2, 5.2], zoom: 72, near: 0.1, far: 100 }}>
         <CameraOrbit dimensions={dimensions} orbit={orbit} zoomScale={zoomScale} />
         <SelectedObjectScreenPosition
           selectedObject={selectedPreviewObject}
@@ -187,20 +187,43 @@ function CameraOrbit({
   orbit: { elevation: number; yaw: number };
   zoomScale: number;
 }) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
 
   useEffect(() => {
-    const radius = (Math.max(dimensions.width, dimensions.depth) * 1.75 + 3.2) * zoomScale;
-    const horizontalRadius = Math.cos(orbit.elevation) * radius;
+    const contentHeight = Math.max(dimensions.height, 0.45);
+    const targetY = contentHeight / 2;
+    const halfWidth = dimensions.width / 2;
+    const halfDepth = dimensions.depth / 2;
+    const halfHeight = contentHeight / 2;
+    const boundingRadius = Math.sqrt(
+      halfWidth * halfWidth + halfDepth * halfDepth + halfHeight * halfHeight
+    );
+    const distance = boundingRadius * 2.8 + 2;
+    const horizontalRadius = Math.cos(orbit.elevation) * distance;
+    const fitZoom =
+      Math.min(size.width, size.height) > 0
+        ? (Math.min(size.width, size.height) / (boundingRadius * 2.65)) / zoomScale
+        : 72;
+    const orthographicCamera = camera as {
+      position: { set: (x: number, y: number, z: number) => void };
+      lookAt: (x: number, y: number, z: number) => void;
+      updateProjectionMatrix: () => void;
+      zoom?: number;
+      near?: number;
+      far?: number;
+    };
 
-    camera.position.set(
+    orthographicCamera.position.set(
       Math.sin(orbit.yaw) * horizontalRadius,
-      Math.sin(orbit.elevation) * radius,
+      targetY + Math.sin(orbit.elevation) * distance,
       Math.cos(orbit.yaw) * horizontalRadius
     );
-    camera.lookAt(0, dimensions.height * 0.12, 0);
-    camera.updateProjectionMatrix();
-  }, [camera, dimensions.depth, dimensions.height, dimensions.width, orbit.elevation, orbit.yaw, zoomScale]);
+    orthographicCamera.lookAt(0, targetY, 0);
+    orthographicCamera.zoom = clamp(fitZoom, 34, 180);
+    orthographicCamera.near = 0.1;
+    orthographicCamera.far = 100;
+    orthographicCamera.updateProjectionMatrix();
+  }, [camera, dimensions.depth, dimensions.height, dimensions.width, orbit.elevation, orbit.yaw, size.height, size.width, zoomScale]);
 
   return null;
 }
@@ -319,43 +342,45 @@ function Scene({
   onObjectDelete?: (objectId: string) => void;
   cageSizeCm: { widthCm: number; depthCm: number; heightCm: number };
 }) {
-  const wallThickness = 0.08;
-  const wallHeight = Math.max(dimensions.height * 0.32, 0.45);
+  const wallThickness = 0.05;
+  const wallHeight = Math.max(dimensions.height, 0.45);
   const helperSize = Math.max(dimensions.width, dimensions.depth);
   const gridSize = Math.max(helperSize * 4.8, 12);
 
   return (
     <>
-      <color attach="background" args={['#EEF4F0']} />
+      <color attach="background" args={['#1C1D1E']} />
       <ambientLight intensity={0.82} />
       <directionalLight position={[4, 6, 5]} intensity={0.85} />
 
       <group>
-        <mesh position={[0, -0.04, 0]}>
-          <boxGeometry args={[dimensions.width, 0.08, dimensions.depth]} />
-          <meshStandardMaterial color="#F8F6EF" transparent opacity={0.72} />
+        <mesh position={[0, -0.025, 0]}>
+          <boxGeometry args={[dimensions.width, 0.05, dimensions.depth]} />
+          <meshStandardMaterial color="#D9D6D1" />
         </mesh>
 
         <gridHelper
           args={[gridSize, 32, '#789188', '#D3DED8']}
-          position={[0, 0.012, 0]}
+          position={[0, 0.01, 0]}
         />
 
-        <mesh position={[0, wallHeight / 2, -dimensions.depth / 2]}>
-          <boxGeometry args={[dimensions.width, wallHeight, wallThickness]} />
-          <meshStandardMaterial color="#8FB9A8" transparent opacity={0.28} />
-        </mesh>
-        <mesh position={[0, wallHeight / 2, dimensions.depth / 2]}>
-          <boxGeometry args={[dimensions.width, wallHeight, wallThickness]} />
-          <meshStandardMaterial color="#8FB9A8" transparent opacity={0.28} />
-        </mesh>
-        <mesh position={[-dimensions.width / 2, wallHeight / 2, 0]}>
+        <mesh position={[dimensions.width / 2 - wallThickness / 2, wallHeight / 2, 0]}>
           <boxGeometry args={[wallThickness, wallHeight, dimensions.depth]} />
-          <meshStandardMaterial color="#7CA798" transparent opacity={0.28} />
+          <meshStandardMaterial attach="material-0" color="#FFFFFF" />
+          <meshStandardMaterial attach="material-1" color="#FFFFFF" />
+          <meshStandardMaterial attach="material-2" color="#111111" />
+          <meshStandardMaterial attach="material-3" color="#FFFFFF" />
+          <meshStandardMaterial attach="material-4" color="#FFFFFF" />
+          <meshStandardMaterial attach="material-5" color="#FFFFFF" />
         </mesh>
-        <mesh position={[dimensions.width / 2, wallHeight / 2, 0]}>
-          <boxGeometry args={[wallThickness, wallHeight, dimensions.depth]} />
-          <meshStandardMaterial color="#7CA798" transparent opacity={0.28} />
+        <mesh position={[0, wallHeight / 2, -dimensions.depth / 2 + wallThickness / 2]}>
+          <boxGeometry args={[dimensions.width, wallHeight, wallThickness]} />
+          <meshStandardMaterial attach="material-0" color="#FCFCFA" />
+          <meshStandardMaterial attach="material-1" color="#FCFCFA" />
+          <meshStandardMaterial attach="material-2" color="#111111" />
+          <meshStandardMaterial attach="material-3" color="#FCFCFA" />
+          <meshStandardMaterial attach="material-4" color="#FCFCFA" />
+          <meshStandardMaterial attach="material-5" color="#FCFCFA" />
         </mesh>
 
         {objects.map((object) => (
@@ -402,6 +427,23 @@ function SelectableObject({
         {isSelected ? (
           <mesh>
             <cylinderGeometry args={[highlightSize[0] / 2, highlightSize[0] / 2, highlightSize[1], 24]} />
+            <meshBasicMaterial color="#245C50" wireframe transparent opacity={0.9} />
+          </mesh>
+        ) : null}
+      </group>
+    );
+  }
+
+  if (object.type === 'pyramid') {
+    return (
+      <group position={object.position} rotation={[0, object.rotationY, 0]} onPointerDown={selectObject}>
+        <mesh>
+          <coneGeometry args={[object.size[0] / 2, object.size[1], 4]} />
+          <meshStandardMaterial color={object.color} />
+        </mesh>
+        {isSelected ? (
+          <mesh>
+            <coneGeometry args={[highlightSize[0] / 2, highlightSize[1], 4]} />
             <meshBasicMaterial color="#245C50" wireframe transparent opacity={0.9} />
           </mesh>
         ) : null}
@@ -740,12 +782,13 @@ function normalizeDimensions(widthCm: number, depthCm: number, heightCm: number)
   const width = safeDimension(widthCm, 60);
   const depth = safeDimension(depthCm, 40);
   const height = safeDimension(heightCm, 35);
-  const maxSide = Math.max(width, depth, 1);
+  const maxSide = Math.max(width, depth, height, 1);
+  const baseScale = 3.2 / maxSide;
 
   return {
-    width: Math.max((width / maxSide) * 3.2, 1.4),
-    depth: Math.max((depth / maxSide) * 3.2, 1.1),
-    height: Math.max((height / maxSide) * 3.2, 1),
+    width: width * baseScale,
+    depth: depth * baseScale,
+    height: height * baseScale,
   };
 }
 
@@ -799,7 +842,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     borderRadius: 16,
-    backgroundColor: '#EEF4F0',
+    backgroundColor: '#D7DDDA',
   },
   zoomControls: {
     position: 'absolute',
