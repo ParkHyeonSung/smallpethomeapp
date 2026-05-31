@@ -1,5 +1,5 @@
-/* eslint-disable react/no-unknown-property */
-import { Canvas, useThree } from '@react-three/fiber/native';
+/* eslint-disable react/no-unknown-property, @typescript-eslint/no-require-imports */
+import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -12,6 +12,7 @@ type SimulationPreviewProps = {
   onObjectSelect?: (objectId: string) => void;
   onObjectChange?: (objectId: string, updates: Partial<SimulationObject>) => void;
   onObjectDelete?: (objectId: string) => void;
+  onSelectedObjectScreenPosition?: (position: SelectedObjectScreenProjection | null) => void;
   objects?: {
     id: string;
     type: 'box' | 'cylinder';
@@ -28,6 +29,21 @@ type SimulationPreviewProps = {
 
 type SimulationObject = NonNullable<SimulationPreviewProps['objects']>[number];
 type PreviewObject = ReturnType<typeof normalizeObject>;
+type ScreenVector = { x: number; y: number };
+type SelectedObjectScreenProjection = ScreenVector & {
+  basis: {
+    xCm: ScreenVector;
+    yCm: ScreenVector;
+    zCm: ScreenVector;
+  };
+};
+type ProjectableVector3 = {
+  x: number;
+  y: number;
+  set: (x: number, y: number, z: number) => ProjectableVector3;
+  project: (camera: unknown) => ProjectableVector3;
+};
+const { Vector3 } = require('three') as { Vector3: new () => ProjectableVector3 };
 
 export default function SimulationPreview({
   widthCm,
@@ -38,6 +54,7 @@ export default function SimulationPreview({
   onObjectSelect,
   onObjectChange,
   onObjectDelete,
+  onSelectedObjectScreenPosition,
   objects = [],
 }: SimulationPreviewProps) {
   const dimensions = normalizeDimensions(widthCm, depthCm, heightCm);
@@ -90,11 +107,17 @@ export default function SimulationPreview({
       return nextZoom;
     });
   };
+  const selectedPreviewObject =
+    previewObjects.find((object) => object.id === selectedObjectId) ?? null;
 
   return (
     <View style={[styles.container, { height: previewHeight }]} {...panResponder.panHandlers}>
       <Canvas camera={{ position: [4.5, 4.2, 5.2], fov: 42 }}>
         <CameraOrbit dimensions={dimensions} orbit={orbit} zoomScale={zoomScale} />
+        <SelectedObjectScreenPosition
+          selectedObject={selectedPreviewObject}
+          onPositionChange={onSelectedObjectScreenPosition}
+        />
         <Scene
           dimensions={dimensions}
           objects={previewObjects}
@@ -162,6 +185,103 @@ function CameraOrbit({
   }, [camera, dimensions.depth, dimensions.height, dimensions.width, orbit.elevation, orbit.yaw, zoomScale]);
 
   return null;
+}
+
+function SelectedObjectScreenPosition({
+  selectedObject,
+  onPositionChange,
+}: {
+  selectedObject: PreviewObject | null;
+  onPositionChange?: (position: SelectedObjectScreenProjection | null) => void;
+}) {
+  const { camera, size } = useThree();
+  const projectedPositionRef = useRef(new Vector3());
+  const lastPositionRef = useRef<SelectedObjectScreenProjection & { id: string } | null>(null);
+
+  useEffect(() => {
+    if (!selectedObject) {
+      lastPositionRef.current = null;
+      onPositionChange?.(null);
+    }
+  }, [onPositionChange, selectedObject]);
+
+  useFrame(() => {
+    if (!selectedObject || !onPositionChange) return;
+
+    const center = projectWorldPoint(
+      projectedPositionRef.current,
+      camera,
+      size,
+      selectedObject.position[0],
+      selectedObject.position[1],
+      selectedObject.position[2]
+    );
+    const xPlus = projectWorldPoint(
+      projectedPositionRef.current,
+      camera,
+      size,
+      selectedObject.position[0] + selectedObject.scaleX,
+      selectedObject.position[1],
+      selectedObject.position[2]
+    );
+    const yPlus = projectWorldPoint(
+      projectedPositionRef.current,
+      camera,
+      size,
+      selectedObject.position[0],
+      selectedObject.position[1] + selectedObject.scaleY,
+      selectedObject.position[2]
+    );
+    const zPlus = projectWorldPoint(
+      projectedPositionRef.current,
+      camera,
+      size,
+      selectedObject.position[0],
+      selectedObject.position[1],
+      selectedObject.position[2] + selectedObject.scaleZ
+    );
+
+    const nextPosition: SelectedObjectScreenProjection & { id: string } = {
+      id: selectedObject.id,
+      x: center.x,
+      y: center.y,
+      basis: {
+        xCm: { x: xPlus.x - center.x, y: xPlus.y - center.y },
+        yCm: { x: yPlus.x - center.x, y: yPlus.y - center.y },
+        zCm: { x: zPlus.x - center.x, y: zPlus.y - center.y },
+      },
+    };
+    const lastPosition = lastPositionRef.current;
+
+    if (
+      !lastPosition ||
+      lastPosition.id !== nextPosition.id ||
+      Math.abs(lastPosition.x - nextPosition.x) > 0.5 ||
+      Math.abs(lastPosition.y - nextPosition.y) > 0.5
+    ) {
+      lastPositionRef.current = nextPosition;
+      onPositionChange(nextPosition);
+    }
+  });
+
+  return null;
+}
+
+function projectWorldPoint(
+  vector: ProjectableVector3,
+  camera: unknown,
+  size: { width: number; height: number },
+  x: number,
+  y: number,
+  z: number
+) {
+  vector.set(x, y, z);
+  vector.project(camera);
+
+  return {
+    x: ((vector.x + 1) / 2) * size.width,
+    y: ((-vector.y + 1) / 2) * size.height,
+  };
 }
 
 function Scene({
@@ -641,6 +761,9 @@ function normalizeObject(
     widthCm: safeDimension(object.widthCm, 10),
     depthCm: safeDimension(object.depthCm, 10),
     heightCm: safeDimension(object.heightCm, 10),
+    scaleX,
+    scaleY,
+    scaleZ,
     position: [
       (object.xCm - safeWidthCm / 2) * scaleX,
       object.yCm * scaleY + height / 2,
