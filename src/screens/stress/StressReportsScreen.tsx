@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -202,14 +202,14 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 220,
     padding: 22,
-    borderRadius: 20,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
   stateTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
@@ -222,14 +222,14 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: 44,
     paddingHorizontal: 18,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   primaryButtonText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   reportGrid: {
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   reportCard: {
     gap: 14,
     padding: 18,
-    borderRadius: 18,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
   reportSpecies: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   levelBadge: {
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   },
   levelBadgeText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   summaryText: {
     fontSize: 14,
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     width: '48.5%',
     gap: 4,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: colors.surfaceMuted,
   },
   metricLabel: {
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.primaryStrong,
   },
 });

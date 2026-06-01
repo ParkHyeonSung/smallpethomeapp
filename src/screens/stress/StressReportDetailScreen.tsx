@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   speciesText: {
     marginTop: 4,
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   levelBadge: {
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   },
   levelBadgeText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   summaryText: {
     fontSize: 15,
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     width: '48.5%',
     gap: 4,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: colors.surfaceMuted,
   },
   metricLabel: {
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.primaryStrong,
   },
   detailColumn: {
@@ -360,10 +360,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
-
   infoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -397,23 +396,23 @@ const styles = StyleSheet.create({
   deleteButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    borderRadius: 16,
+    minHeight: 46,
+    borderRadius: 12,
     backgroundColor: '#FFF3F3',
     borderWidth: 1,
     borderColor: '#F2B7B7',
   },
   deleteButtonText: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '600',
     color: colors.danger,
   },
   primaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: 44,
     paddingHorizontal: 18,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   primaryButtonText: {
