@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   previewCard: {
     gap: 14,
     padding: 16,
-    borderRadius: 22,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
   formCard: {
     gap: 12,
     padding: 18,
-    borderRadius: 22,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: 74,
     height: 74,
-    borderRadius: 18,
+    borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'transparent',
@@ -609,11 +609,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   thumbnailBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   thumbnailRemoveButton: {
@@ -625,10 +625,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(22, 26, 24, 0.76)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: colors.text,
   },
@@ -639,13 +639,13 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
+    paddingVertical: 8,
+    borderRadius: 12,
     backgroundColor: colors.primaryLight,
   },
   secondaryButtonText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primary,
   },
   activeButton: {
@@ -656,22 +656,22 @@ const styles = StyleSheet.create({
   },
   ghostButton: {
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   ghostButtonText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.text,
   },
   previewFrame: {
     overflow: 'hidden',
     width: '100%',
-    borderRadius: 24,
-    backgroundColor: '#EAF2EE',
+    borderRadius: 14,
+    backgroundColor: colors.backgroundAccent,
     borderWidth: 1,
     borderColor: colors.border,
     justifyContent: 'center',
@@ -704,7 +704,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#FFFFFF',
     borderWidth: 5,
-    borderColor: '#F19A3E',
+    borderColor: colors.accent,
   },
   overlayHint: {
     position: 'absolute',
@@ -716,12 +716,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.58)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   overlayHintText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   emptyCard: {
@@ -730,10 +730,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#EAF2EE',
+    backgroundColor: colors.backgroundAccent,
   },
   emptyTitle: {
     fontSize: 18,
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 48,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: colors.background,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -761,13 +761,13 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
-    borderRadius: 14,
+    minHeight: 44,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   primaryButtonText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   tagList: {
@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 12,
     backgroundColor: colors.background,
   },
   tagTextWrap: {
@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 12,
     backgroundColor: colors.background,
   },
   visibilityText: {
@@ -821,13 +821,13 @@ const styles = StyleSheet.create({
   submitButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    borderRadius: 16,
+    minHeight: 48,
+    borderRadius: 12,
     backgroundColor: colors.primary,
   },
   submitButtonText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   disabled: {

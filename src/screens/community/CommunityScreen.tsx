@@ -1,4 +1,4 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -959,15 +959,14 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     marginTop: 4,
-    borderRadius: 22,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#F2F3F6',
+    borderWidth: 0,
   },
   brandTitle: {
     marginTop: 4,
@@ -977,13 +976,13 @@ const styles = StyleSheet.create({
     color: colors.primaryStrong,
   },
   headerSpacer: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     marginTop: 4,
   },
   featureMenuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 12, 10, 0.25)',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   featureMenuBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -992,8 +991,8 @@ const styles = StyleSheet.create({
     width: '86%',
     maxWidth: 360,
     height: '100%',
-    borderTopRightRadius: 24,
-    borderBottomRightRadius: 24,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
     backgroundColor: colors.surface,
     borderRightWidth: 1,
     borderColor: colors.border,
@@ -1001,10 +1000,10 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'web' ? 34 : 56,
     paddingBottom: 24,
     gap: 10,
-    shadowColor: '#102019',
-    shadowOffset: { width: 14, height: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
+    shadowColor: '#000000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
     elevation: 8,
   },
   featureMenuDrawerDesktop: {
@@ -1019,7 +1018,7 @@ const styles = StyleSheet.create({
   },
   featureMenuTitle: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   featureMenuSubtitle: {
@@ -1041,17 +1040,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 16,
+    borderRadius: 12,
     backgroundColor: colors.background,
     padding: 12,
   },
   featureMenuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surfaceMuted,
   },
   featureMenuTextBox: {
     flex: 1,
@@ -1059,7 +1058,7 @@ const styles = StyleSheet.create({
   },
   featureMenuItemTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   featureMenuItemDescription: {
@@ -1074,7 +1073,7 @@ const styles = StyleSheet.create({
     minHeight: 140,
     marginHorizontal: 20,
     marginBottom: 14,
-    borderRadius: 20,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1104,7 +1103,7 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   postCardDesktop: {
-    borderRadius: 14,
+    borderRadius: 12,
     marginBottom: 0,
     borderWidth: 1,
   },
@@ -1145,7 +1144,7 @@ const styles = StyleSheet.create({
   },
   postMediaContainer: {
     overflow: 'visible',
-    backgroundColor: '#DCE7E2',
+    backgroundColor: '#EDEEF1',
   },
   mediaSlide: {
     flexShrink: 0,
@@ -1163,11 +1162,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(16, 24, 20, 0.62)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   imageCountText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   feedTagMarker: {
@@ -1190,10 +1189,10 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     padding: 14,
-    borderRadius: 16,
-    backgroundColor: 'rgba(244, 247, 245, 0.96)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E0DC',
+    borderColor: colors.border,
     gap: 6,
   },
   feedTagHeader: {
@@ -1204,7 +1203,7 @@ const styles = StyleSheet.create({
   feedTagName: {
     flex: 1,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   feedTagCloseButton: {
@@ -1228,7 +1227,7 @@ const styles = StyleSheet.create({
   },
   feedTagLinkText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primary,
   },
   carouselArrow: {
@@ -1240,7 +1239,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(16, 24, 20, 0.58)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   carouselArrowLeft: {
     left: 12,
@@ -1257,29 +1256,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 24,
     justifyContent: 'space-between',
-    backgroundColor: '#E4EFE9',
+    backgroundColor: '#F2F3F6',
   },
   textPostBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#F6FBF8',
+    backgroundColor: '#F5F5F7',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
-    color: colors.primary,
+    color: colors.textMuted,
   },
   textPostPreview: {
     fontSize: 28,
     lineHeight: 36,
-    fontWeight: '800',
-    color: '#17362F',
+    fontWeight: '700',
+    color: colors.primaryStrong,
   },
   textPostHint: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#416A60',
+    fontWeight: '600',
+    color: colors.textMuted,
   },
   postContent: {
     paddingHorizontal: 16,
@@ -1340,7 +1339,7 @@ const styles = StyleSheet.create({
   },
   moreCommentsText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primary,
   },
   commentRow: {
@@ -1366,20 +1365,20 @@ const styles = StyleSheet.create({
   },
   commentInput: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
+    minHeight: 40,
+    borderRadius: 10,
     backgroundColor: colors.background,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     fontSize: 14,
     color: colors.text,
   },
   commentSubmitButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 42,
+    height: 40,
     paddingHorizontal: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   commentSubmitButtonDisabled: {
@@ -1387,21 +1386,21 @@ const styles = StyleSheet.create({
   },
   commentSubmitText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   sheetOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(8, 12, 10, 0.28)',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   sheetBackdrop: {
     flex: 1,
   },
   commentSheet: {
     maxHeight: '82%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     backgroundColor: colors.surface,
     paddingHorizontal: 18,
     paddingBottom: 18,
@@ -1412,10 +1411,10 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   commentSheetHandle: {
-    width: 44,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: '#C9D3CE',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D1D6',
   },
   commentSheetHeader: {
     flexDirection: 'row',
@@ -1427,7 +1426,7 @@ const styles = StyleSheet.create({
   },
   commentSheetTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   commentSheetScroll: {

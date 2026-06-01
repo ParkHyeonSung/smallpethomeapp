@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   },
   commentAuthor: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   commentContent: {
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   commentMetaAction: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textMuted,
   },
   commentMenu: {
@@ -148,12 +148,12 @@ const styles = StyleSheet.create({
   },
   commentActionText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primary,
   },
   commentDeleteText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#C24747',
   },
   commentEditRow: {
@@ -163,25 +163,25 @@ const styles = StyleSheet.create({
   },
   commentEditInput: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: 14,
+    minHeight: 40,
+    borderRadius: 10,
     backgroundColor: colors.background,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     fontSize: 14,
     color: colors.text,
   },
   commentMiniButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 42,
+    height: 40,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   commentMiniButtonText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   commentCancelText: {
