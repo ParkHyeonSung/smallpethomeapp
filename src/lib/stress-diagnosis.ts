@@ -230,6 +230,7 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
   const { animalGroup, noiseBand, signals, recommendations } = buildSignals(input);
   const hasWarningSignal = signals.some((signal) => signal.severity === 'warning');
   const vibrationLevel = clamp(input.vibrationLevel, 0, 10);
+  const ambientNoiseDb = clamp(input.ambientNoiseDb, 0, 140);
 
   let score = 0;
   score += noiseBand.penalty * animalGroup.noiseWeight;
@@ -237,6 +238,12 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
   if (input.directSunlight) score += animalGroup.directSunlightPenalty;
 
   let roundedScore = clamp(Math.round(score), 0, 100);
+  if (animalGroup.noiseWarningDb !== null && ambientNoiseDb >= animalGroup.noiseWarningDb) {
+    roundedScore = Math.max(roundedScore, 55);
+  } else if (ambientNoiseDb >= animalGroup.noiseCautionDb) {
+    roundedScore = Math.max(roundedScore, 28);
+  }
+
   if (vibrationLevel >= 10) {
     roundedScore = Math.max(roundedScore, 70);
   } else if (vibrationLevel >= 8) {
@@ -275,6 +282,18 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
         '진동이 10/10으로 측정되었습니다. 측정 중 휴대폰을 손으로 들거나 흔들었다면, 바닥에 내려놓고 다시 측정해 주세요.'
       );
     }
+  } else if (animalGroup.noiseWarningDb !== null && ambientNoiseDb >= animalGroup.noiseWarningDb) {
+    level = 'warning';
+    summary =
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 해당 동물군에 부담이 될 수 있는 높은 소음이 감지되었습니다.'
+        : '현재 측정에서 해당 동물군에 부담이 될 수 있는 높은 소음이 감지되었습니다.';
+  } else if (ambientNoiseDb >= animalGroup.noiseCautionDb && level === 'stable') {
+    level = 'caution';
+    summary =
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 해당 동물군에 주의가 필요한 소음이 감지되었습니다.'
+        : '현재 측정에서 해당 동물군에 주의가 필요한 소음이 감지되었습니다.';
   } else if (level === 'stable' && hasWarningSignal) {
     level = 'caution';
     summary =

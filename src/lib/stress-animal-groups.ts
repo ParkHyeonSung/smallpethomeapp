@@ -13,6 +13,8 @@ export type StressAnimalGroupInfo = {
   guidance: string;
   noiseWeight: number;
   vibrationWeight: number;
+  noiseCautionDb: number;
+  noiseWarningDb: number | null;
   directSunlightPenalty: number;
   directSunlightNote: string;
 };
@@ -70,6 +72,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '설치류는 반복 소음과 갑작스러운 생활 소음에 민감할 수 있으므로, 소음 관련 설명을 보수적으로 제시합니다.',
     noiseWeight: 1.0,
     vibrationWeight: 3.6,
+    noiseCautionDb: 80,
+    noiseWarningDb: 85,
     directSunlightPenalty: 8,
     directSunlightNote:
       '설치류는 피할 공간 없는 직사광선 노출 시 열부하와 과도한 밝기 자극 위험이 있어 벌점을 적용합니다.',
@@ -80,6 +84,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '기니피그는 소음+진동 동시 노출 시 스트레스 반응이 증폭되며(NIH 연구), 놀람 자극에 민감합니다.',
     noiseWeight: 1.0,
     vibrationWeight: 4.0,
+    noiseCautionDb: 75,
+    noiseWarningDb: 85,
     directSunlightPenalty: 8,
     directSunlightNote:
       '기니피그는 피할 공간 없는 직사광선 노출이 열부하와 회피 스트레스로 이어질 수 있어 벌점을 적용합니다.',
@@ -90,6 +96,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '토끼는 갑작스러운 소음에 의한 패닉 도주 반응 위험이 높아(NIH 연구), 소음 가중치를 상향 적용합니다.',
     noiseWeight: 1.15,
     vibrationWeight: 3.2,
+    noiseCautionDb: 75,
+    noiseWarningDb: 85,
     directSunlightPenalty: 8,
     directSunlightNote:
       '토끼는 피할 공간 없는 직사광선 노출 시 열 축적과 회피 불가 상황이 문제가 될 수 있어 벌점을 적용합니다.',
@@ -100,6 +108,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '파충류는 공기 전달 소음보다 바닥 진동 전달에 특화되어 있어(Chelini et al. 2024), 진동 가중치를 높이고 소음 가중치를 낮춥니다.',
     noiseWeight: 0.6,
     vibrationWeight: 5.0,
+    noiseCautionDb: 90,
+    noiseWarningDb: null,
     directSunlightPenalty: 0,
     directSunlightNote:
       '파충류는 종에 따라 빛과 열 요구가 달라 공통 벌점을 적용하지 않고, 해석 단계에서만 주의 문구로 반영합니다.',
@@ -110,6 +120,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '고슴도치는 야행성이며 청각 피크가 40 kHz로 초음파에 민감합니다(Royal Society Publishing). 낮 시간 소음과 빛 노출에 취약합니다.',
     noiseWeight: 1.1,
     vibrationWeight: 3.6,
+    noiseCautionDb: 75,
+    noiseWarningDb: 85,
     directSunlightPenalty: 10,
     directSunlightNote:
       '고슴도치는 야행성이라 빛 자극에도 민감하여 직사광선 벌점을 상향 적용합니다.',
@@ -120,6 +132,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '슈가글라이더는 야행성이며 진동과 돌발 소음에 크래빙 방어 반응을 보입니다. 진동 가중치를 상향하고 빛 벌점을 높입니다.',
     noiseWeight: 1.0,
     vibrationWeight: 4.0,
+    noiseCautionDb: 75,
+    noiseWarningDb: 85,
     directSunlightPenalty: 10,
     directSunlightNote:
       '슈가글라이더는 야행성이라 빛 자극에 민감하여 직사광선 벌점을 상향 적용합니다.',
@@ -130,6 +144,8 @@ const GROUP_INFO: Record<StressAnimalGroup, Omit<StressAnimalGroupInfo, 'group'>
       '페럿은 청각이 발달했으나 환경 적응력이 비교적 높아, 소음·진동 가중치를 설치류 대비 소폭 완화하여 적용합니다.',
     noiseWeight: 0.9,
     vibrationWeight: 3.2,
+    noiseCautionDb: 80,
+    noiseWarningDb: 90,
     directSunlightPenalty: 8,
     directSunlightNote:
       '페럿은 포유류 기본 규칙에 따라 피할 공간 없는 직사광선을 중간 수준 위험으로 반영합니다.',
