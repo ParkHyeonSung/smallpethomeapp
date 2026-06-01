@@ -76,6 +76,8 @@ type NoiseBand = {
   recommendation: string;
 };
 
+const VIBRATION_SCORE_BASE_CORRECTION = 3.6;
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -202,15 +204,15 @@ function buildSignals(input: StressDiagnosisInput) {
   if (input.directSunlight) {
     signals.push({
       code: 'direct_sunlight',
-      severity: animalGroup.group === 'reptile' ? 'caution' : 'warning',
+      severity: animalGroup.category === 'reptile' ? 'caution' : 'warning',
       title:
-        animalGroup.group === 'reptile'
+        animalGroup.category === 'reptile'
           ? '직사광선 환경은 종별 확인 필요'
           : '피할 공간 없는 직사광선 노출 가능성',
       detail: animalGroup.directSunlightNote,
     });
     recommendations.push(
-      animalGroup.group === 'reptile'
+      animalGroup.category === 'reptile'
         ? '파충류는 종에 따라 빛과 열 요구가 다르므로, 은신처와 온도 구배가 충분한지 함께 확인해 주세요.'
         : '직사광선이 직접 닿지 않거나 회피 공간이 확보되는 위치인지 다시 확인해 주세요.'
     );
@@ -233,9 +235,9 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
   const ambientNoiseDb = clamp(input.ambientNoiseDb, 0, 140);
 
   let score = 0;
-  score += noiseBand.penalty * animalGroup.noiseWeight;
-  score += vibrationLevel * animalGroup.vibrationWeight;
-  if (input.directSunlight) score += animalGroup.directSunlightPenalty;
+  score += noiseBand.penalty * animalGroup.noiseCorrection;
+  score += vibrationLevel * VIBRATION_SCORE_BASE_CORRECTION * animalGroup.vibrationCorrection;
+  if (input.directSunlight) score += animalGroup.directSunlightCorrection;
 
   let roundedScore = clamp(Math.round(score), 0, 100);
   if (animalGroup.noiseWarningDb !== null && ambientNoiseDb >= animalGroup.noiseWarningDb) {

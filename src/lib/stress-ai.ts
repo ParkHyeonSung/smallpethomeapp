@@ -1,7 +1,9 @@
 import {
   resolveStressAnimalGroup,
+  StressAnimalCategory,
   StressAnimalGroup,
   StressAnimalGroupInfo,
+  StressAnimalProfileId,
 } from '@/src/lib/stress-animal-groups';
 import {
   buildStressDiagnosisReport,
@@ -9,6 +11,7 @@ import {
   StressDiagnosisLevel,
   StressDiagnosisReport,
 } from '@/src/lib/stress-diagnosis';
+import { supabase } from '@/src/lib/supabase';
 
 export type StressAiPromptBundle = {
   system: string;
@@ -20,21 +23,62 @@ export type StressAiPreview = {
   body: string;
 };
 
+export type StressAiMeasuredValues = {
+  averageDb: number;
+  maxDb: number;
+};
+
+export type StressAiVibrationSummary = {
+  averageState: string;
+  peakState: string;
+  pattern: string;
+  meaning: string;
+  guidance: string;
+};
+
+export type StressAiFrequencyAnalysis = {
+  peakFrequencyHz: number;
+  dominantBand: string;
+  highFrequencyLevel: string;
+  lowFrequencyMarkerLevel: string;
+  lowBandRatio?: number;
+  midBandRatio?: number;
+  highBandRatio?: number;
+  summary: string;
+};
+
+export type StressAiResult = {
+  suitabilityStatus: string;
+  noiseStatus: string;
+  vibrationStatus: string;
+  noiseInterpretation: string;
+  vibrationInterpretation: string;
+  why: string;
+  improvements: string;
+};
+
 export type StressAiPayload = {
   animal: {
     userInput: string;
     group: StressAnimalGroup;
+    category: StressAnimalCategory;
+    categoryLabel: string;
+    profileId: StressAnimalProfileId;
     groupLabel: string;
   };
   measurement: {
     mode: 'current' | 'peak';
     durationSec: number;
     ambientNoiseDb: number;
+    averageDb?: number;
+    maxDb?: number;
     noiseBand: string;
     vibrationLevel: number;
     vibrationBand: string;
     directSunlight: boolean;
   };
+  vibrationSummary?: StressAiVibrationSummary;
+  frequencyAnalysis?: StressAiFrequencyAnalysis;
   patternAnalysis?: {
     noisePattern: string;
     noiseDetail: string;
@@ -74,7 +118,7 @@ function getVibrationBandLabel(level: number) {
 }
 
 function getPriorityFactors(groupInfo: StressAnimalGroupInfo): ('noise' | 'vibration' | 'direct_sunlight')[] {
-  if (groupInfo.group === 'reptile') {
+  if (groupInfo.category === 'reptile') {
     return ['vibration', 'direct_sunlight', 'noise'];
   }
 
@@ -86,6 +130,9 @@ export function buildStressAiPayload(
   options?: {
     measurementDurationSec?: number;
     report?: StressDiagnosisReport;
+    measuredValues?: StressAiMeasuredValues;
+    vibrationSummary?: StressAiVibrationSummary;
+    frequencyAnalysis?: StressAiFrequencyAnalysis;
     patternAnalysis?: StressAiPayload['patternAnalysis'];
   }
 ): StressAiPayload {
@@ -97,17 +144,24 @@ export function buildStressAiPayload(
     animal: {
       userInput: input.species.trim(),
       group: groupInfo.group,
+      category: groupInfo.category,
+      categoryLabel: groupInfo.categoryLabel,
+      profileId: groupInfo.profileId,
       groupLabel: groupInfo.label,
     },
     measurement: {
       mode: measurementMode,
       durationSec: options?.measurementDurationSec ?? 8,
       ambientNoiseDb: input.ambientNoiseDb,
+      averageDb: options?.measuredValues?.averageDb,
+      maxDb: options?.measuredValues?.maxDb,
       noiseBand: report.noiseBandLabel,
       vibrationLevel: input.vibrationLevel,
       vibrationBand: getVibrationBandLabel(input.vibrationLevel),
       directSunlight: input.directSunlight,
     },
+    vibrationSummary: options?.vibrationSummary,
+    frequencyAnalysis: options?.frequencyAnalysis,
     diagnosis: {
       score: report.score,
       level: report.level,
@@ -143,6 +197,22 @@ export function buildStressAiPromptBundle(payload: StressAiPayload): StressAiPro
     system,
     user,
   };
+}
+
+export async function generateStressAiResult(payload: StressAiPayload): Promise<StressAiResult> {
+  const { data, error } = await supabase.functions.invoke<StressAiResult>('generate-stress-ai', {
+    body: payload,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new Error('AI 해석 결과가 비어 있습니다.');
+  }
+
+  return data;
 }
 
 export function buildStressAiPreview(payload: StressAiPayload): StressAiPreview {
