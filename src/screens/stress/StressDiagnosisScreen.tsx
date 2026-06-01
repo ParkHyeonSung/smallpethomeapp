@@ -10,18 +10,39 @@ import {
 } from 'expo-audio';
 import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
-import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, DimensionValue, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import type { EmitterSubscription } from 'react-native';
 
 import ScreenContainer from '@/src/components/common/ScreenContainer';
-import MetricBarChart from '@/src/components/stress/MetricBarChart';
 import { colors } from '@/src/constants/colors';
+import {
+  addAndroidAudioAnalyzerListener,
+  AndroidAudioAnalyzerSnapshot,
+  isAndroidAudioAnalyzerAvailable,
+  mapRmsDbToApproxDisplayDb,
+  startAndroidAudioAnalyzer,
+  stopAndroidAudioAnalyzer,
+} from '@/src/lib/android-audio-analyzer';
 import { buildStressAiPayload, buildStressAiPreview, StressAiPreview } from '@/src/lib/stress-ai';
+import {
+  analyzeNoisePattern,
+  analyzeVibrationPattern,
+  NoisePatternSample,
+  StressPatternAnalysis,
+  VibrationPatternSample,
+} from '@/src/lib/stress-patterns';
 import {
   buildStressDiagnosisReport,
   StressDiagnosisInput,
   StressDiagnosisReport,
 } from '@/src/lib/stress-diagnosis';
 import { saveStressReport } from '@/src/lib/stress-reports';
+import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
+import {
+  analyzeVibrationSamples,
+  getDominantVibrationBandLabel,
+  VibrationAnalyzerSnapshot,
+} from '@/src/lib/vibration-analyzer';
 
 const LEVEL_META: Record<
   StressDiagnosisReport['level'],
@@ -64,7 +85,7 @@ const MEASUREMENT_OPTIONS = {
 
 const SPECIES_OPTIONS = ['설치류', '기니피그', '토끼', '파충류', '기타 포유류'] as const;
 const OTHER_MAMMAL_SUB = ['고슴도치', '슈가글라이더', '페럿'] as const;
-const VIBRATION_SAMPLE_INTERVAL_MS = 20;
+const VIBRATION_SAMPLE_INTERVAL_MS = 5;
 
 type MeasurementType = keyof typeof MEASUREMENT_OPTIONS;
 type Step = 'select' | 'sunlight' | 'measuring' | 'result';
@@ -91,6 +112,229 @@ function getVibrationBandLabel(level: number) {
   if (level >= 4) return '보통';
   if (level >= 2) return '낮음';
   return '매우 낮음';
+}
+
+function formatFrequencyHz(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '- Hz';
+  }
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)} kHz`;
+  }
+
+  return `${Math.round(value)} Hz`;
+}
+
+function getDominantBandLabel(snapshot: AndroidAudioAnalyzerSnapshot | null) {
+  if (!snapshot) {
+    return '분석 대기';
+  }
+
+  const bands = [
+    { label: '저주파', value: snapshot.lowBandLevel },
+    { label: '중주파', value: snapshot.midBandLevel },
+    { label: '고주파', value: snapshot.highBandLevel },
+  ];
+  return bands.sort((a, b) => b.value - a.value)[0]?.label ?? '분석 대기';
+}
+
+function getResultHeadline(level: StressDiagnosisReport['level']) {
+  if (level === 'warning') {
+    return '입주 전 위치 조정이 필요해요';
+  }
+
+  if (level === 'caution') {
+    return '주의 신호가 감지됐어요';
+  }
+
+  return '현재 위치는 비교적 안정적이에요';
+}
+
+function getPatternSummary(
+  noisePattern: StressPatternAnalysis | null,
+  vibrationPattern: StressPatternAnalysis | null
+) {
+  const noiseLabel = noisePattern?.label ?? '소음 패턴 분석 대기';
+  const vibrationLabel = vibrationPattern?.label ?? '진동 패턴 분석 대기';
+  return `${noiseLabel} · ${vibrationLabel}`;
+}
+
+function getRiskZoneLabel(value: number, caution: number, warning: number) {
+  if (value >= warning) return '위험군';
+  if (value >= caution) return '주의군';
+  return '안정권';
+}
+
+function downsamplePoints<T>(items: T[], maxCount: number) {
+  if (items.length <= maxCount) return items;
+
+  const step = (items.length - 1) / (maxCount - 1);
+  return Array.from({ length: maxCount }, (_, index) => items[Math.round(index * step)]);
+}
+
+function getSmoothPoints(points: Array<{ x: number; y: number }>) {
+  if (points.length < 3) return points;
+
+  const smoothPoints: Array<{ x: number; y: number }> = [];
+  const segments = 10;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const p0 = points[Math.max(index - 1, 0)];
+    const p1 = points[index];
+    const p2 = points[index + 1];
+    const p3 = points[Math.min(index + 2, points.length - 1)];
+
+    for (let step = 0; step < segments; step += 1) {
+      const t = step / segments;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const x =
+        0.5 *
+        (2 * p1.x +
+          (-p0.x + p2.x) * t +
+          (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+          (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+      const y =
+        0.5 *
+        (2 * p1.y +
+          (-p0.y + p2.y) * t +
+          (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+          (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+      smoothPoints.push({ x, y });
+    }
+  }
+
+  smoothPoints.push(points[points.length - 1]);
+  return smoothPoints;
+}
+
+type RiskGraphProps = {
+  title: string;
+  value: number;
+  unit: string;
+  maxValue: number;
+  cautionValue: number;
+  warningValue: number;
+  patternLabel?: string;
+  detail: string;
+  samples: Array<{ timestampMs: number; value: number }>;
+  chartWidth: number;
+};
+
+function RiskGraph({
+  title,
+  value,
+  unit,
+  maxValue,
+  cautionValue,
+  warningValue,
+  patternLabel,
+  detail,
+  samples,
+  chartWidth,
+}: RiskGraphProps) {
+  const safeValue = clamp(value, 0, maxValue);
+  const chartHeight = 190;
+  const chartPadding = 4;
+  const drawableWidth = Math.max(chartWidth - chartPadding * 2, 1);
+  const drawableHeight = Math.max(chartHeight - chartPadding * 2, 1);
+  const sortedSamples = downsamplePoints(
+    samples.filter((sample) => Number.isFinite(sample.value)).sort((a, b) => a.timestampMs - b.timestampMs),
+    90
+  );
+  const displaySamples = sortedSamples.map((sample, index) => {
+    const windowStart = Math.max(index - 2, 0);
+    const windowEnd = Math.min(index + 3, sortedSamples.length);
+    const windowSamples = sortedSamples.slice(windowStart, windowEnd);
+    const averagedValue =
+      windowSamples.reduce((sum, current) => sum + current.value, 0) / Math.max(windowSamples.length, 1);
+
+    return { ...sample, value: averagedValue };
+  });
+  const startMs = sortedSamples[0]?.timestampMs ?? 0;
+  const endMs = sortedSamples[sortedSamples.length - 1]?.timestampMs ?? startMs + 1;
+  const durationMs = Math.max(endMs - startMs, 1);
+  const points = displaySamples.map((sample) => {
+    const x = chartPadding + ((sample.timestampMs - startMs) / durationMs) * drawableWidth;
+    const y = chartPadding + drawableHeight - (clamp(sample.value, 0, maxValue) / maxValue) * drawableHeight;
+    return { x, y, value: sample.value };
+  });
+  const smoothPoints = getSmoothPoints(points).map((point) => ({
+    x: clamp(point.x, chartPadding, chartWidth - chartPadding),
+    y: clamp(point.y, chartPadding, chartHeight - chartPadding),
+  }));
+  const cautionY = chartPadding + drawableHeight - (clamp(cautionValue, 0, maxValue) / maxValue) * drawableHeight;
+  const warningY = chartPadding + drawableHeight - (clamp(warningValue, 0, maxValue) / maxValue) * drawableHeight;
+  const tenSecondTicks = Array.from(
+    { length: Math.floor(durationMs / 10_000) + 1 },
+    (_, index) => index * 10
+  );
+
+  return (
+    <View style={styles.riskGraphCard}>
+      <View style={styles.riskGraphHeader}>
+        <View>
+          <Text style={styles.riskGraphTitle}>{title}</Text>
+          <Text style={styles.riskGraphDetail}>{detail}</Text>
+        </View>
+        <View style={styles.riskValueWrap}>
+          <Text style={styles.riskValue}>{Math.round(safeValue)}</Text>
+          <Text style={styles.riskUnit}>{unit}</Text>
+        </View>
+      </View>
+
+      <View style={styles.chartWithAxis}>
+        <View style={styles.yAxisLabels}>
+          <Text style={styles.axisText}>{Math.round(maxValue)}{unit}</Text>
+          <Text style={styles.axisText}>0{unit}</Text>
+        </View>
+        <View>
+          <View style={[styles.lineChartWrap, { width: chartWidth }]}>
+            <View style={[styles.lineDangerArea, { height: warningY }]} />
+            <View style={[styles.lineCautionArea, { top: warningY, height: cautionY - warningY }]} />
+            <View style={[styles.lineThresholdHorizontal, { top: warningY }]} />
+            <View style={[styles.lineThresholdHorizontal, { top: cautionY }]} />
+            {tenSecondTicks.map((seconds) => {
+              const left = `${((seconds * 1000) / durationMs) * 100}%` as DimensionValue;
+              return <View key={seconds} style={[styles.timeTickLine, { left }]} />;
+            })}
+            {smoothPoints.slice(1).map((point, index) => {
+              const previous = smoothPoints[index];
+              const dx = point.x - previous.x;
+              const dy = point.y - previous.y;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              const angle = `${Math.atan2(dy, dx)}rad`;
+
+              return (
+                <View
+                  key={`${point.x}-${index}`}
+                  style={[
+                    styles.lineSegment,
+                    {
+                      left: previous.x,
+                      top: previous.y,
+                      width: length,
+                      transform: [{ rotate: angle }],
+                    },
+                  ]}
+                />
+              );
+            })}
+          </View>
+          <View style={[styles.xAxisLabels, { width: chartWidth }]}>
+            {tenSecondTicks.map((seconds) => (
+              <Text key={seconds} style={styles.axisText}>
+                {seconds}s
+              </Text>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {patternLabel ? <Text style={styles.riskPatternText}>{patternLabel}</Text> : null}
+    </View>
+  );
 }
 
 type BooleanFieldProps = {
@@ -137,10 +381,16 @@ function formatCountdown(seconds: number) {
 
 export default function StressDiagnosisScreen() {
   const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
   const audioRecorder = useAudioRecorder(recorderOptions);
   const recorderState = useAudioRecorderState(audioRecorder, 150);
 
   const vibrationSubscriptionRef = useRef<ReturnType<typeof Accelerometer.addListener> | null>(null);
+  const audioAnalyzerSubscriptionRef = useRef<EmitterSubscription | null>(null);
+  const latestAudioSnapshotRef = useRef<AndroidAudioAnalyzerSnapshot | null>(null);
+  const noisePatternSamplesRef = useRef<NoisePatternSample[]>([]);
+  const vibrationPatternSamplesRef = useRef<VibrationPatternSample[]>([]);
+  const lastVibrationPatternUpdateRef = useRef(0);
   const latestMeteringRef = useRef<number | null>(null);
   const measurementRunIdRef = useRef(0);
 
@@ -169,8 +419,13 @@ export default function StressDiagnosisScreen() {
   const [isRunningMeasurement, setIsRunningMeasurement] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [aiPreview, setAiPreview] = useState<StressAiPreview | null>(null);
+  const [audioSnapshot, setAudioSnapshot] = useState<AndroidAudioAnalyzerSnapshot | null>(null);
+  const [vibrationSnapshot, setVibrationSnapshot] = useState<VibrationAnalyzerSnapshot | null>(null);
+  const [noisePattern, setNoisePattern] = useState<StressPatternAnalysis | null>(null);
+  const [vibrationPattern, setVibrationPattern] = useState<StressPatternAnalysis | null>(null);
 
   const selectedOption = MEASUREMENT_OPTIONS[measurementType];
+  const animalGroupInfo = useMemo(() => resolveStressAnimalGroup(species), [species]);
 
   const diagnosisInput = useMemo<StressDiagnosisInput>(
     () => ({
@@ -192,6 +447,15 @@ export default function StressDiagnosisScreen() {
 
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
   const canSaveReport = step === 'result' && hasMeasuredNoise && hasMeasuredVibration;
+  const noiseValue = ambientNoiseDb ? Number(ambientNoiseDb) : 0;
+  const noiseWarningValue = animalGroupInfo.noiseWarningDb ?? Math.min(animalGroupInfo.noiseCautionDb + 10, 100);
+  const resultChartWidth = Math.max(260, Math.min(640, width - 68));
+  const vibrationMgValue = vibrationSnapshot ? vibrationSnapshot.rms * 1000 : 0;
+  const vibrationSamplesMg = vibrationPatternSamplesRef.current.map((sample) => ({
+    timestampMs: sample.timestampMs,
+    value: sample.value * 1000,
+  }));
+  const vibrationMaxValue = 100;
 
   useEffect(() => {
     if (!isMeasuringNoise || recorderState.metering === undefined) {
@@ -204,6 +468,8 @@ export default function StressDiagnosisScreen() {
   useEffect(() => {
     return () => {
       vibrationSubscriptionRef.current?.remove();
+      audioAnalyzerSubscriptionRef.current?.remove();
+      void stopAndroidAudioAnalyzer();
     };
   }, []);
 
@@ -216,9 +482,19 @@ export default function StressDiagnosisScreen() {
     const payload = buildStressAiPayload(diagnosisInput, {
       measurementDurationSec: selectedOption.durationSec,
       report,
+      patternAnalysis:
+        noisePattern && vibrationPattern
+          ? {
+              noisePattern: noisePattern.label,
+              noiseDetail: noisePattern.detail,
+              vibrationPattern: vibrationPattern.label,
+              vibrationDetail: vibrationPattern.detail,
+              evidenceTags: [...noisePattern.tags, ...vibrationPattern.tags],
+            }
+          : undefined,
     });
     setAiPreview(buildStressAiPreview(payload));
-  }, [canSaveReport, diagnosisInput, report, selectedOption.durationSec]);
+  }, [canSaveReport, diagnosisInput, noisePattern, report, selectedOption.durationSec, vibrationPattern]);
 
   useEffect(() => {
     if (!isRunningMeasurement) {
@@ -270,6 +546,14 @@ export default function StressDiagnosisScreen() {
     setHasMeasuredVibration(false);
     setIsMeasuringNoise(true);
     setIsMeasuringVibration(true);
+    setAudioSnapshot(null);
+    setVibrationSnapshot(null);
+    setNoisePattern(null);
+    setVibrationPattern(null);
+    noisePatternSamplesRef.current = [];
+    vibrationPatternSamplesRef.current = [];
+    lastVibrationPatternUpdateRef.current = 0;
+    latestAudioSnapshotRef.current = null;
     setNoiseMeasurementLabel('소음을 측정하고 있어요...');
     setVibrationMeasurementLabel('진동을 측정하고 있어요...');
 
@@ -281,35 +565,93 @@ export default function StressDiagnosisScreen() {
       }
 
       const samples: number[] = [];
+      const sampleTimes: number[] = [];
+      const useNativeAudioAnalyzer = isAndroidAudioAnalyzerAvailable();
       // Use a denser sampling interval so short low-amplitude vibrations are less likely
       // to be lost than they were with the previous coarse 100 ms polling.
       Accelerometer.setUpdateInterval(VIBRATION_SAMPLE_INTERVAL_MS);
 
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
+      if (useNativeAudioAnalyzer) {
+        audioAnalyzerSubscriptionRef.current?.remove();
+        audioAnalyzerSubscriptionRef.current = addAndroidAudioAnalyzerListener((snapshot) => {
+          latestAudioSnapshotRef.current = snapshot;
+          setAudioSnapshot(snapshot);
+          const displayDb = mapRmsDbToApproxDisplayDb(snapshot.rmsDb);
+          const now = Date.now();
+          noisePatternSamplesRef.current = [
+            ...noisePatternSamplesRef.current,
+            {
+              timestampMs: now,
+              approxDb: displayDb,
+              peakFrequencyHz: snapshot.peakFrequencyHz,
+              lowBandLevel: snapshot.lowBandLevel,
+              midBandLevel: snapshot.midBandLevel,
+              highBandLevel: snapshot.highBandLevel,
+              marker32HzLevel: snapshot.marker32HzLevel,
+              marker125HzLevel: snapshot.marker125HzLevel,
+            },
+          ];
+          setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current, now));
+          setNoiseMeasurementLabel(
+            `${displayDb} dB · ${formatFrequencyHz(snapshot.peakFrequencyHz)} · ${getDominantBandLabel(snapshot)}`
+          );
+        });
+        const initialSnapshot = await startAndroidAudioAnalyzer(44100, 2048);
+        latestAudioSnapshotRef.current = initialSnapshot;
+        setAudioSnapshot(initialSnapshot);
+      } else {
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+        });
 
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
+        await audioRecorder.prepareToRecordAsync();
+        audioRecorder.record();
+      }
 
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = Accelerometer.addListener(({ x, y, z }) => {
         const magnitude = Math.sqrt(x * x + y * y + z * z);
         const deltaFromGravity = Math.abs(magnitude - 1);
         samples.push(deltaFromGravity);
+        sampleTimes.push(Date.now());
+        const now = Date.now();
+        vibrationPatternSamplesRef.current = [
+          ...vibrationPatternSamplesRef.current,
+          { timestampMs: now, value: deltaFromGravity },
+        ];
+        if (now - lastVibrationPatternUpdateRef.current >= 700) {
+          lastVibrationPatternUpdateRef.current = now;
+          setVibrationPattern(analyzeVibrationPattern(vibrationPatternSamplesRef.current, now));
+        }
       });
 
       await sleep(durationMs);
 
-      await audioRecorder.stop();
+      let nativeSnapshot: AndroidAudioAnalyzerSnapshot | null = null;
+      if (useNativeAudioAnalyzer) {
+        nativeSnapshot = (await stopAndroidAudioAnalyzer()) ?? latestAudioSnapshotRef.current;
+        audioAnalyzerSubscriptionRef.current?.remove();
+        audioAnalyzerSubscriptionRef.current = null;
+      } else {
+        await audioRecorder.stop();
+      }
 
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = null;
 
       const metering = latestMeteringRef.current;
       let estimatedDb: number | null = null;
-      if (metering === null) {
+      if (nativeSnapshot) {
+        estimatedDb = mapRmsDbToApproxDisplayDb(nativeSnapshot.rmsDb);
+        setAmbientNoiseDb(String(estimatedDb));
+        setAudioSnapshot(nativeSnapshot);
+        setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current));
+        setHasMeasuredNoise(true);
+        setNoiseMeasurementLabel(
+          `${estimatedDb} dB · ${formatFrequencyHz(nativeSnapshot.peakFrequencyHz)} · ${getDominantBandLabel(nativeSnapshot)}`
+        );
+      } else if (metering === null) {
         setNoiseMeasurementLabel('유효한 소음 값을 읽지 못했어요. 다시 측정해 주세요.');
       } else {
         estimatedDb = mapMeteringToDb(metering);
@@ -325,8 +667,16 @@ export default function StressDiagnosisScreen() {
 
       const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
       const level = mapVibrationRmsToLevel(rms);
+      const actualDurationMs =
+        sampleTimes.length >= 2 ? sampleTimes[sampleTimes.length - 1] - sampleTimes[0] : durationMs;
+      const actualSampleRate =
+        actualDurationMs > 0 && samples.length > 1
+          ? ((samples.length - 1) / actualDurationMs) * 1000
+          : 1000 / VIBRATION_SAMPLE_INTERVAL_MS;
 
       setVibrationLevel(level);
+      setVibrationSnapshot(analyzeVibrationSamples(samples, actualSampleRate));
+      setVibrationPattern(analyzeVibrationPattern(vibrationPatternSamplesRef.current));
       setHasMeasuredVibration(true);
       setVibrationMeasurementLabel(`${getVibrationBandLabel(level)} (${level}/10)로 측정됐어요.`);
       return { noise: estimatedDb, vibration: level };
@@ -345,6 +695,9 @@ export default function StressDiagnosisScreen() {
         }
       } catch {}
 
+      audioAnalyzerSubscriptionRef.current?.remove();
+      audioAnalyzerSubscriptionRef.current = null;
+      void stopAndroidAudioAnalyzer();
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = null;
       setIsMeasuringVibration(false);
@@ -367,6 +720,14 @@ export default function StressDiagnosisScreen() {
       setHasMeasuredVibration(false);
       setAmbientNoiseDb('');
       setVibrationLevel(0);
+      setAudioSnapshot(null);
+      setVibrationSnapshot(null);
+      setNoisePattern(null);
+      setVibrationPattern(null);
+      noisePatternSamplesRef.current = [];
+      vibrationPatternSamplesRef.current = [];
+      lastVibrationPatternUpdateRef.current = 0;
+      latestAudioSnapshotRef.current = null;
       setAiPreview(null);
       setStep('measuring');
       setRemainingSeconds(selectedOption.durationSec);
@@ -414,6 +775,14 @@ export default function StressDiagnosisScreen() {
     setHasMeasuredVibration(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
+    setAudioSnapshot(null);
+    setVibrationSnapshot(null);
+    setNoisePattern(null);
+    setVibrationPattern(null);
+    noisePatternSamplesRef.current = [];
+    vibrationPatternSamplesRef.current = [];
+    lastVibrationPatternUpdateRef.current = 0;
+    latestAudioSnapshotRef.current = null;
     setAiPreview(null);
     setNoiseMeasurementLabel('아직 소음 측정을 진행하지 않았어요.');
     setVibrationMeasurementLabel('아직 진동 측정을 진행하지 않았어요.');
@@ -441,8 +810,6 @@ export default function StressDiagnosisScreen() {
       setIsSavingReport(false);
     }
   };
-
-  const meta = LEVEL_META[report.level];
 
   if (isWeb) {
     return (
@@ -590,60 +957,49 @@ export default function StressDiagnosisScreen() {
               </View>
             </View>
 
-            <View style={styles.measureSummaryCard}>
-              <Text style={styles.measureSummaryLabel}>{noiseMeasurementLabel}</Text>
-              <Text style={styles.measureSummaryLabel}>{vibrationMeasurementLabel}</Text>
-            </View>
           </View>
         ) : null}
 
         {step === 'result' ? (
           <View style={styles.resultLayout}>
-            <View style={styles.resultHeader}>
-              <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
-                <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
-              </View>
-              <Text style={styles.modePill}>{selectedOption.label}</Text>
-            </View>
-
-            <Text style={styles.resultMetrics}>
-              소음 {ambientNoiseDb || '0'} dB · 진동 {vibrationLevel}/10
-            </Text>
-            <Text style={styles.resultInterpretation}>
-              소음 {report.noiseBandLabel} · 진동 {getVibrationBandLabel(vibrationLevel)}
-            </Text>
-
-            <MetricBarChart
-              items={[
-                {
-                  label: '소음',
-                  value: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
-                  maxValue: 100,
-                  displayValue: `${ambientNoiseDb || '0'} dB`,
-                },
-                {
-                  label: '진동',
-                  value: vibrationLevel,
-                  maxValue: 10,
-                  displayValue: `${vibrationLevel}/10`,
-                },
-              ]}
+            <RiskGraph
+              title="소음 위험군"
+              value={noiseValue}
+              unit="dB"
+              maxValue={100}
+              cautionValue={animalGroupInfo.noiseCautionDb}
+              warningValue={noiseWarningValue}
+              patternLabel={noisePattern?.label}
+              chartWidth={resultChartWidth}
+              samples={noisePatternSamplesRef.current.map((sample) => ({
+                timestampMs: sample.timestampMs,
+                value: sample.approxDb,
+              }))}
+              detail={
+                audioSnapshot
+                  ? `주요 ${formatFrequencyHz(audioSnapshot.peakFrequencyHz)} · ${getDominantBandLabel(audioSnapshot)}`
+                  : report.noiseBandLabel
+              }
             />
 
-            <Text style={styles.reportSummary}>{report.summary}</Text>
-
-            {aiPreview ? (
-              <View style={styles.aiBlock}>
-                <Text style={styles.aiTitle}>{aiPreview.title}</Text>
-                <Text style={styles.aiBody}>{aiPreview.body}</Text>
-              </View>
-            ) : null}
-
-            <Text style={styles.disclaimer}>
-              이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
-              산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
-              문제가 관찰되면 반드시 수의사와 상담하세요.
-            </Text>
+            <RiskGraph
+              title="진동 위험군"
+              value={vibrationMgValue}
+              unit="mg"
+              maxValue={vibrationMaxValue}
+              cautionValue={25}
+              warningValue={50}
+              patternLabel={vibrationPattern?.label}
+              chartWidth={resultChartWidth}
+              samples={vibrationSamplesMg}
+              detail={
+                vibrationSnapshot
+                  ? `주요 ${formatFrequencyHz(vibrationSnapshot.peakFrequencyHz)} · ${getDominantVibrationBandLabel(
+                      vibrationSnapshot
+                    )}`
+                  : getVibrationBandLabel(vibrationLevel)
+              }
+            />
 
             <View style={styles.resultActions}>
               <Pressable style={styles.secondaryButton} onPress={handleReset}>
@@ -680,14 +1036,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
   mobileOnlyTitle: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
@@ -700,7 +1056,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -713,14 +1069,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 14,
     padding: 20,
-    borderRadius: 24,
-    backgroundColor: '#FBF8F1',
+    borderRadius: 14,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E8E0D2',
+    borderColor: colors.border,
   },
   eyebrow: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.textMuted,
@@ -728,7 +1084,7 @@ const styles = StyleSheet.create({
   },
   centerTitle: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
@@ -744,14 +1100,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 14,
     padding: 20,
-    borderRadius: 24,
-    backgroundColor: '#FBF8F1',
+    borderRadius: 14,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E8E0D2',
+    borderColor: colors.border,
   },
   selectTitle: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   optionList: {
@@ -760,10 +1116,10 @@ const styles = StyleSheet.create({
   optionButton: {
     paddingHorizontal: 18,
     paddingVertical: 18,
-    borderRadius: 24,
+    borderRadius: 14,
     borderWidth: 1,
-    backgroundColor: '#EAF4EE',
-    borderColor: '#C8DDD2',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -779,12 +1135,12 @@ const styles = StyleSheet.create({
   },
   optionButtonTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   optionButtonDuration: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primaryStrong,
   },
   optionButtonDescription: {
@@ -812,7 +1168,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#F7F3EB',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -822,10 +1178,11 @@ const styles = StyleSheet.create({
   },
   speciesOptionChipText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textMuted,
   },
   speciesOptionChipTextActive: {
+    fontWeight: '700',
     color: colors.primaryStrong,
   },
   choiceRow: {
@@ -840,25 +1197,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: '#F7F3EB',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
   },
   choiceChipActive: {
     backgroundColor: colors.primaryLight,
-    borderColor: '#B9D8CC',
+    borderColor: colors.primaryStrong,
   },
   choiceChipText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textMuted,
   },
   choiceChipTextActive: {
+    fontWeight: '700',
     color: colors.primaryStrong,
   },
   primaryButton: {
-    minHeight: 56,
-    borderRadius: 18,
+    minHeight: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primaryStrong,
@@ -866,22 +1224,22 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   secondaryButton: {
-    minHeight: 56,
-    borderRadius: 18,
+    minHeight: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F7F3EB',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 18,
   },
   secondaryButtonText: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '600',
     color: colors.text,
   },
   buttonDisabled: {
@@ -893,14 +1251,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 14,
     padding: 20,
-    borderRadius: 24,
-    backgroundColor: '#FBF8F1',
+    borderRadius: 14,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E8E0D2',
+    borderColor: colors.border,
   },
   measureTitle: {
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
@@ -914,21 +1272,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#D7D0C1',
-    backgroundColor: '#F7F3EB',
+    borderColor: '#D1D1D6',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   timerValue: {
     fontSize: 36,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
-  },
-  measureSummaryCard: {
-    padding: 18,
-    borderRadius: 22,
-    backgroundColor: '#F7F3EB',
-    gap: 12,
   },
   measureSummaryLabel: {
     fontSize: 14,
@@ -937,21 +1289,125 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   resultLayout: {
-    gap: 18,
-    marginTop: 14,
-    padding: 20,
-    borderRadius: 24,
-    backgroundColor: '#FBF8F1',
-    borderWidth: 1,
-    borderColor: '#E8E0D2',
+    gap: 30,
+    marginTop: 6,
+    paddingVertical: 4,
   },
-  resultHeader: {
+  riskGraphCard: {
+    gap: 16,
+  },
+  riskGraphHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: 16,
+  },
+  riskGraphTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  riskGraphDetail: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+  },
+  riskValueWrap: {
+    alignItems: 'flex-end',
+  },
+  riskValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  riskUnit: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  chartWithAxis: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  yAxisLabels: {
+    width: 24,
+    height: 190,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingVertical: 2,
+  },
+  axisText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  lineChartWrap: {
+    height: 190,
+    overflow: 'hidden',
+    borderRadius: 12,
+    backgroundColor: '#DDEFE6',
+    alignSelf: 'center',
+  },
+  xAxisLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  lineDangerArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#F0B8B8',
+  },
+  lineCautionArea: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    backgroundColor: '#F7E6B8',
+  },
+  lineThresholdHorizontal: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(28, 28, 30, 0.28)',
+  },
+  timeTickLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(28, 28, 30, 0.08)',
+  },
+  lineSegment: {
+    position: 'absolute',
+    height: 1,
+    backgroundColor: colors.primaryStrong,
+    transformOrigin: '0px 0.5px',
+  },
+  riskPatternText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
+  resultHero: {
     gap: 10,
   },
+  resultHeadline: {
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 38,
+    color: colors.text,
+  },
+  resultPatternSummary: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textMuted,
+  },
   levelBadge: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
@@ -960,26 +1416,49 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  modePill: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
+  resultSection: {
+    gap: 7,
+    paddingTop: 4,
   },
-  resultMetrics: {
-    fontSize: 26,
+  sectionTitle: {
+    fontSize: 13,
     fontWeight: '800',
     color: colors.text,
-    lineHeight: 34,
+  },
+  resultMetrics: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text,
+    lineHeight: 30,
   },
   resultInterpretation: {
     fontSize: 15,
     fontWeight: '700',
     color: colors.primaryStrong,
   },
+  frequencySummary: {
+    gap: 5,
+  },
+  frequencySummaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  frequencySummaryMuted: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
   reportSummary: {
     fontSize: 15,
     lineHeight: 23,
     color: colors.text,
+  },
+  recommendationBox: {
+    gap: 8,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceMuted,
   },
   disclaimer: {
     fontSize: 12,
@@ -992,7 +1471,7 @@ const styles = StyleSheet.create({
   },
   aiTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   aiBody: {

@@ -35,6 +35,13 @@ export type StressAiPayload = {
     vibrationBand: string;
     directSunlight: boolean;
   };
+  patternAnalysis?: {
+    noisePattern: string;
+    noiseDetail: string;
+    vibrationPattern: string;
+    vibrationDetail: string;
+    evidenceTags: string[];
+  };
   diagnosis: {
     score: number;
     level: StressDiagnosisLevel;
@@ -79,6 +86,7 @@ export function buildStressAiPayload(
   options?: {
     measurementDurationSec?: number;
     report?: StressDiagnosisReport;
+    patternAnalysis?: StressAiPayload['patternAnalysis'];
   }
 ): StressAiPayload {
   const report = options?.report ?? buildStressDiagnosisReport(input);
@@ -105,6 +113,7 @@ export function buildStressAiPayload(
       level: report.level,
       label: getDiagnosisLabel(report.level),
     },
+    patternAnalysis: options?.patternAnalysis,
     interpretationRules: {
       priorityFactors: getPriorityFactors(groupInfo),
       groupGuidance: groupInfo.guidance,

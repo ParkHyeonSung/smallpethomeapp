@@ -60,7 +60,7 @@ export default function ScoreGauge({ score, level, label }: ScoreGaugeProps) {
               height: GAUGE_SIZE / 2,
               borderTopLeftRadius: RADIUS + STROKE_WIDTH / 2,
               borderTopRightRadius: RADIUS + STROKE_WIDTH / 2,
-              borderColor: '#E8E2D6',
+              borderColor: '#E5E5EA',
               borderWidth: STROKE_WIDTH,
               borderBottomWidth: 0,
             },
@@ -228,12 +228,12 @@ const styles = StyleSheet.create({
   },
   scoreNumber: {
     fontSize: 36,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: 40,
   },
   scoreUnit: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textMuted,
     paddingBottom: 4,
   },
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   },
   levelPillText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   legendRow: {
     flexDirection: 'row',

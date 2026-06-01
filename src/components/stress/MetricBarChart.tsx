@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.text,
   },
   barRow: {
@@ -93,19 +93,19 @@ const styles = StyleSheet.create({
   },
   barTrack: {
     flex: 1,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#E8E2D6',
+    height: 10,
+    borderRadius: 4,
+    backgroundColor: '#E5E5EA',
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    borderRadius: 7,
+    borderRadius: 4,
   },
   barValue: {
     width: 62,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     textAlign: 'right',
   },
 });
