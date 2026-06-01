@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
-import { DeviceEventEmitter } from 'react-native';
+import { DeviceEventEmitter, StyleSheet } from 'react-native';
 
 import { colors } from '@/src/constants/colors';
 import { supabase } from '@/src/lib/supabase';
@@ -59,18 +59,19 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: '#A8AFA9',
+        tabBarInactiveTintColor: '#AEAEB2',
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          letterSpacing: 0.1,
         },
         tabBarStyle: {
-          height: 64,
-          paddingTop: 6,
-          paddingBottom: 8,
-          backgroundColor: '#FFFDFC',
-          borderTopWidth: 1,
-          borderTopColor: '#E3DDD0',
+          height: 56,
+          paddingTop: 4,
+          paddingBottom: 6,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: '#E5E5EA',
         },
       }}>
       <Tabs.Screen

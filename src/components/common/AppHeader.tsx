@@ -18,12 +18,13 @@ export default function AppHeader({ title, subtitle }: AppHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    gap: 6,
+    gap: 4,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '700',
     color: colors.primaryStrong,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,

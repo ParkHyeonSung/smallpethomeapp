@@ -49,11 +49,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 16,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
-    gap: 18,
+    paddingBottom: 36,
+    gap: 16,
   },
 });
