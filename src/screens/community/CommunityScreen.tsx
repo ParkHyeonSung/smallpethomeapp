@@ -10,6 +10,7 @@ import {
   Animated,
   DeviceEventEmitter,
   Image as NativeImage,
+  Linking,
   Modal,
   PanResponder,
   Platform,
@@ -29,6 +30,7 @@ import { colors } from '@/src/constants/colors';
 import { CommentItem, createComment, deleteComment, getCommentsByPostId, updateComment } from '@/src/lib/comments';
 import { getMyLikedPostIds, likePost, unlikePost } from '@/src/lib/likes';
 import { getPostImagesByPostIds, PostImageItem } from '@/src/lib/post-images';
+import { getPostTagsByPostId, PostProductTag } from '@/src/lib/post-tags';
 import { getFeedPosts, PostItem } from '@/src/lib/posts';
 import { supabase } from '@/src/lib/supabase';
 
@@ -44,7 +46,9 @@ export default function CommunityScreen() {
 
   const [posts, setPosts] = useState<PostItem[]>([]);
   const [postImagesByPostId, setPostImagesByPostId] = useState<Record<string, PostImageItem[]>>({});
+  const [postTagsByPostId, setPostTagsByPostId] = useState<Record<string, PostProductTag[]>>({});
   const [activeImageIndexByPostId, setActiveImageIndexByPostId] = useState<Record<string, number>>({});
+  const [activeTagIdByPostId, setActiveTagIdByPostId] = useState<Record<string, string | null>>({});
   const [mediaWidthByPostId, setMediaWidthByPostId] = useState<Record<string, number>>({});
   const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
@@ -156,10 +160,15 @@ export default function CommunityScreen() {
 
       const [feedPosts, likedIds] = await Promise.all([getFeedPosts(), getMyLikedPostIds()]);
       const nextPostImages = await getPostImagesByPostIds(feedPosts.map((post) => post.id));
+      const nextPostTagsEntries = await Promise.all(
+        feedPosts.map(async (post) => [post.id, await getPostTagsByPostId(post.id)] as const)
+      );
+      const nextPostTags = Object.fromEntries(nextPostTagsEntries);
 
       setPosts(feedPosts);
       setLikedPostIds(likedIds);
       setPostImagesByPostId(nextPostImages);
+      setPostTagsByPostId(nextPostTags);
     } catch (error) {
       Alert.alert('불러오기 실패', error instanceof Error ? error.message : '게시글을 불러오지 못했습니다.');
     } finally {
@@ -391,6 +400,19 @@ export default function CommunityScreen() {
 
     target.scrollTo({ x: mediaWidth * nextIndex, animated: true });
     setActiveImageIndexByPostId((prev) => ({ ...prev, [postId]: nextIndex }));
+    setActiveTagIdByPostId((prev) => ({ ...prev, [postId]: null }));
+  };
+
+  const handleOpenTagLink = async (postId: string) => {
+    const activeTagId = activeTagIdByPostId[postId];
+    const activeTag = (postTagsByPostId[postId] ?? []).find((tag) => tag.id === activeTagId);
+    if (!activeTag) return;
+
+    try {
+      await Linking.openURL(activeTag.product_url);
+    } catch {
+      Alert.alert('링크 열기 실패', '태그 링크를 열 수 없습니다.');
+    }
   };
 
   const openFeatureMenu = () => {
@@ -461,9 +483,19 @@ export default function CommunityScreen() {
       {posts.map((post) => {
         const displayImages = getDisplayImages(post, postImagesByPostId);
         const activeImageIndex = activeImageIndexByPostId[post.id] ?? 0;
+        const postTags = postTagsByPostId[post.id] ?? [];
+        const shouldShowTags = postTags.length > 0 && activeImageIndex === 0;
+        const activeTag =
+          postTags.find((tag) => tag.id === activeTagIdByPostId[post.id]) ?? null;
 
         return (
-          <View key={post.id} style={[styles.postCard, isDesktopWeb && styles.postCardDesktop]}>
+          <View
+            key={post.id}
+            style={[
+              styles.postCard,
+              activeTag && styles.postCardActive,
+              isDesktopWeb && styles.postCardDesktop,
+            ]}>
             <View style={styles.postHeader}>
               <View style={styles.authorRow}>
                 {post.profiles?.avatar_url ? (
@@ -481,15 +513,14 @@ export default function CommunityScreen() {
               </View>
             </View>
 
-            <Pressable
+            <View
               style={styles.postMediaContainer}
               onLayout={(event) => {
                 const nextWidth = event.nativeEvent.layout.width;
                 setMediaWidthByPostId((prev) =>
                   prev[post.id] === nextWidth ? prev : { ...prev, [post.id]: nextWidth }
                 );
-              }}
-              onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
+              }}>
               {displayImages.length > 0 ? (
                 <View>
                   <ScrollView
@@ -506,11 +537,15 @@ export default function CommunityScreen() {
                           Math.max(event.nativeEvent.layoutMeasurement.width, 1)
                       );
                       setActiveImageIndexByPostId((prev) => ({ ...prev, [post.id]: nextIndex }));
+                      setActiveTagIdByPostId((prev) => ({ ...prev, [post.id]: null }));
                     }}>
                     {displayImages.map((image) => (
                       <View
                         key={image.id || image.image_url}
-                        style={[styles.mediaSlide, { width: mediaWidthByPostId[post.id] || width - 40 }]}>
+                        style={[
+                          styles.mediaSlide,
+                          { width: mediaWidthByPostId[post.id] || (isDesktopWeb ? width - 40 : width) },
+                        ]}>
                         <ExpoImage
                           source={{ uri: image.image_url }}
                           style={[
@@ -556,17 +591,66 @@ export default function CommunityScreen() {
                       ) : null}
                     </>
                   ) : null}
+
+                  {shouldShowTags
+                    ? postTags.map((tag) => (
+                        <Pressable
+                          key={tag.id}
+                          style={[
+                            styles.feedTagMarker,
+                            { left: `${tag.x_position * 100}%`, top: `${tag.y_position * 100}%` },
+                          ]}
+                          onPress={() =>
+                            setActiveTagIdByPostId((prev) => ({
+                              ...prev,
+                              [post.id]: prev[post.id] === tag.id ? null : tag.id,
+                            }))
+                          }
+                        />
+                      ))
+                    : null}
+
+                  {shouldShowTags && activeTag ? (
+                    <View
+                      style={[
+                        styles.feedTagCard,
+                        {
+                          top: `${activeTag.y_position * 100}%`,
+                          marginTop: 18,
+                        },
+                      ]}>
+                      <View style={styles.feedTagHeader}>
+                        <Text style={styles.feedTagName}>{activeTag.product_name}</Text>
+                        <Pressable
+                          style={styles.feedTagCloseButton}
+                          onPress={() =>
+                            setActiveTagIdByPostId((prev) => ({ ...prev, [post.id]: null }))
+                          }
+                          hitSlop={8}>
+                          <Ionicons name="close" size={16} color={colors.textMuted} />
+                        </Pressable>
+                      </View>
+                      <Text style={styles.feedTagUrl} numberOfLines={1}>
+                        {activeTag.product_url}
+                      </Text>
+                      <Pressable style={styles.feedTagLinkButton} onPress={() => void handleOpenTagLink(post.id)}>
+                        <Text style={styles.feedTagLinkText}>링크 열기</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
               ) : (
-                <View style={styles.textPostCard}>
-                  <Text style={styles.textPostBadge}>TEXT STORY</Text>
-                  <Text style={styles.textPostPreview} numberOfLines={7}>
-                    {post.content}
-                  </Text>
-                  <Text style={styles.textPostHint}>눌러서 전체 글 보기</Text>
-                </View>
+                <Pressable onPress={() => router.push({ pathname: '/posts/[id]', params: { id: post.id } })}>
+                  <View style={styles.textPostCard}>
+                    <Text style={styles.textPostBadge}>TEXT STORY</Text>
+                    <Text style={styles.textPostPreview} numberOfLines={7}>
+                      {post.content}
+                    </Text>
+                    <Text style={styles.textPostHint}>눌러서 전체 글 보기</Text>
+                  </View>
+                </Pressable>
               )}
-            </Pressable>
+            </View>
 
             <View style={styles.postContent}>
               <View style={styles.feedbackRow}>
@@ -653,6 +737,8 @@ export default function CommunityScreen() {
           </View>
         );
       })}
+
+      <View style={[styles.feedBottomSpacer, isDesktopWeb && styles.feedBottomSpacerDesktop]} />
 
       <Modal
         transparent
@@ -852,7 +938,9 @@ function formatPostDate(value: string) {
 
 const styles = StyleSheet.create({
   screenContent: {
-    gap: 14,
+    paddingHorizontal: 0,
+    paddingBottom: 108,
+    gap: 0,
   },
   screenContentDesktop: {
     width: '100%',
@@ -860,12 +948,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingTop: 20,
     paddingBottom: 40,
+    paddingHorizontal: 20,
+    gap: 14,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 2,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   menuButton: {
     width: 44,
@@ -981,6 +1072,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     minHeight: 140,
+    marginHorizontal: 20,
+    marginBottom: 14,
     borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -999,17 +1092,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   postCard: {
-    overflow: 'hidden',
-    borderRadius: 20,
+    overflow: 'visible',
     backgroundColor: colors.surface,
-    borderWidth: 1,
+    marginBottom: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+  },
+  postCardActive: {
+    zIndex: 20,
+    elevation: 20,
   },
   postCardDesktop: {
     borderRadius: 14,
+    marginBottom: 0,
+    borderWidth: 1,
   },
   postHeader: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
   },
   authorRow: {
@@ -1044,7 +1144,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   postMediaContainer: {
-    overflow: 'hidden',
+    overflow: 'visible',
     backgroundColor: '#DCE7E2',
   },
   mediaSlide: {
@@ -1070,6 +1170,67 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  feedTagMarker: {
+    position: 'absolute',
+    zIndex: 30,
+    elevation: 30,
+    width: 18,
+    height: 18,
+    marginLeft: -9,
+    marginTop: -9,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 4,
+    borderColor: colors.primary,
+  },
+  feedTagCard: {
+    position: 'absolute',
+    zIndex: 25,
+    elevation: 25,
+    left: 16,
+    right: 16,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(244, 247, 245, 0.96)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#D8E0DC',
+    gap: 6,
+  },
+  feedTagHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedTagName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  feedTagCloseButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  feedTagUrl: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  feedTagLinkButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.primaryLight,
+  },
+  feedTagLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
   carouselArrow: {
     position: 'absolute',
     top: '50%',
@@ -1093,8 +1254,8 @@ const styles = StyleSheet.create({
   textPostCard: {
     width: '100%',
     minHeight: 280,
-    paddingHorizontal: 24,
-    paddingVertical: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
     justifyContent: 'space-between',
     backgroundColor: '#E4EFE9',
   },
@@ -1121,7 +1282,9 @@ const styles = StyleSheet.create({
     color: '#416A60',
   },
   postContent: {
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 16,
     gap: 10,
   },
   feedbackRow: {
@@ -1281,5 +1444,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  feedBottomSpacer: {
+    height: 18,
+  },
+  feedBottomSpacerDesktop: {
+    height: 0,
   },
 });
