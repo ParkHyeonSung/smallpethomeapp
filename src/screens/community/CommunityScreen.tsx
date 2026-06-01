@@ -94,7 +94,7 @@ export default function CommunityScreen() {
   useEffect(() => {
     if (!isFocused) return;
     void loadPosts({ showLoader: posts.length === 0 });
-  }, [isFocused]);
+  }, [isFocused, posts.length]);
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener('community:refresh-feed', () => {

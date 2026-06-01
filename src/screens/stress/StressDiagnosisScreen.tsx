@@ -23,7 +23,6 @@ import {
   startAndroidAudioAnalyzer,
   stopAndroidAudioAnalyzer,
 } from '@/src/lib/android-audio-analyzer';
-import { buildStressAiPayload, buildStressAiPreview, StressAiPreview } from '@/src/lib/stress-ai';
 import {
   analyzeNoisePattern,
   analyzeVibrationPattern,
@@ -34,7 +33,6 @@ import {
 import {
   buildStressDiagnosisReport,
   StressDiagnosisInput,
-  StressDiagnosisReport,
 } from '@/src/lib/stress-diagnosis';
 import { saveStressReport } from '@/src/lib/stress-reports';
 import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
@@ -43,27 +41,6 @@ import {
   getDominantVibrationBandLabel,
   VibrationAnalyzerSnapshot,
 } from '@/src/lib/vibration-analyzer';
-
-const LEVEL_META: Record<
-  StressDiagnosisReport['level'],
-  { label: string; color: string; backgroundColor: string }
-> = {
-  stable: {
-    label: '적합',
-    color: '#236B4D',
-    backgroundColor: '#E7F6EF',
-  },
-  caution: {
-    label: '주의',
-    color: '#9A6700',
-    backgroundColor: '#FFF3D6',
-  },
-  warning: {
-    label: '부적합',
-    color: '#A62D2D',
-    backgroundColor: '#FDECEC',
-  },
-};
 
 const recorderOptions = {
   ...RecordingPresets.LOW_QUALITY,
@@ -139,33 +116,6 @@ function getDominantBandLabel(snapshot: AndroidAudioAnalyzerSnapshot | null) {
   return bands.sort((a, b) => b.value - a.value)[0]?.label ?? '분석 대기';
 }
 
-function getResultHeadline(level: StressDiagnosisReport['level']) {
-  if (level === 'warning') {
-    return '입주 전 위치 조정이 필요해요';
-  }
-
-  if (level === 'caution') {
-    return '주의 신호가 감지됐어요';
-  }
-
-  return '현재 위치는 비교적 안정적이에요';
-}
-
-function getPatternSummary(
-  noisePattern: StressPatternAnalysis | null,
-  vibrationPattern: StressPatternAnalysis | null
-) {
-  const noiseLabel = noisePattern?.label ?? '소음 패턴 분석 대기';
-  const vibrationLabel = vibrationPattern?.label ?? '진동 패턴 분석 대기';
-  return `${noiseLabel} · ${vibrationLabel}`;
-}
-
-function getRiskZoneLabel(value: number, caution: number, warning: number) {
-  if (value >= warning) return '위험군';
-  if (value >= caution) return '주의군';
-  return '안정권';
-}
-
 function downsamplePoints<T>(items: T[], maxCount: number) {
   if (items.length <= maxCount) return items;
 
@@ -173,10 +123,10 @@ function downsamplePoints<T>(items: T[], maxCount: number) {
   return Array.from({ length: maxCount }, (_, index) => items[Math.round(index * step)]);
 }
 
-function getSmoothPoints(points: Array<{ x: number; y: number }>) {
+function getSmoothPoints(points: { x: number; y: number }[]) {
   if (points.length < 3) return points;
 
-  const smoothPoints: Array<{ x: number; y: number }> = [];
+  const smoothPoints: { x: number; y: number }[] = [];
   const segments = 10;
 
   for (let index = 0; index < points.length - 1; index += 1) {
@@ -218,7 +168,7 @@ type RiskGraphProps = {
   warningValue: number;
   patternLabel?: string;
   detail: string;
-  samples: Array<{ timestampMs: number; value: number }>;
+  samples: { timestampMs: number; value: number }[];
   chartWidth: number;
 };
 
@@ -401,24 +351,10 @@ export default function StressDiagnosisScreen() {
   const [vibrationLevel, setVibrationLevel] = useState(0);
   const [directSunlight, setDirectSunlight] = useState(false);
 
-  const [permissionStatusText, setPermissionStatusText] = useState(
-    '측정을 시작하면 마이크와 센서 권한을 확인한 뒤 소음과 진동을 순서대로 측정합니다.'
-  );
-  const [microphoneReady, setMicrophoneReady] = useState(false);
-  const [motionReady, setMotionReady] = useState(false);
-
-  const [noiseMeasurementLabel, setNoiseMeasurementLabel] = useState('아직 소음 측정을 진행하지 않았어요.');
-  const [vibrationMeasurementLabel, setVibrationMeasurementLabel] = useState(
-    '아직 진동 측정을 진행하지 않았어요.'
-  );
   const [isMeasuringNoise, setIsMeasuringNoise] = useState(false);
-  const [isMeasuringVibration, setIsMeasuringVibration] = useState(false);
-  const [hasMeasuredNoise, setHasMeasuredNoise] = useState(false);
-  const [hasMeasuredVibration, setHasMeasuredVibration] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [isRunningMeasurement, setIsRunningMeasurement] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
-  const [aiPreview, setAiPreview] = useState<StressAiPreview | null>(null);
   const [audioSnapshot, setAudioSnapshot] = useState<AndroidAudioAnalyzerSnapshot | null>(null);
   const [vibrationSnapshot, setVibrationSnapshot] = useState<VibrationAnalyzerSnapshot | null>(null);
   const [noisePattern, setNoisePattern] = useState<StressPatternAnalysis | null>(null);
@@ -446,7 +382,6 @@ export default function StressDiagnosisScreen() {
   );
 
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
-  const canSaveReport = step === 'result' && hasMeasuredNoise && hasMeasuredVibration;
   const noiseValue = ambientNoiseDb ? Number(ambientNoiseDb) : 0;
   const noiseWarningValue = animalGroupInfo.noiseWarningDb ?? Math.min(animalGroupInfo.noiseCautionDb + 10, 100);
   const resultChartWidth = Math.max(260, Math.min(640, width - 68));
@@ -474,29 +409,6 @@ export default function StressDiagnosisScreen() {
   }, []);
 
   useEffect(() => {
-    if (!canSaveReport) {
-      setAiPreview(null);
-      return;
-    }
-
-    const payload = buildStressAiPayload(diagnosisInput, {
-      measurementDurationSec: selectedOption.durationSec,
-      report,
-      patternAnalysis:
-        noisePattern && vibrationPattern
-          ? {
-              noisePattern: noisePattern.label,
-              noiseDetail: noisePattern.detail,
-              vibrationPattern: vibrationPattern.label,
-              vibrationDetail: vibrationPattern.detail,
-              evidenceTags: [...noisePattern.tags, ...vibrationPattern.tags],
-            }
-          : undefined,
-    });
-    setAiPreview(buildStressAiPreview(payload));
-  }, [canSaveReport, diagnosisInput, noisePattern, report, selectedOption.durationSec, vibrationPattern]);
-
-  useEffect(() => {
     if (!isRunningMeasurement) {
       return;
     }
@@ -518,34 +430,24 @@ export default function StressDiagnosisScreen() {
       motionGranted = motionPermission.status === 'granted';
     }
 
-    setMicrophoneReady(microphoneGranted);
-    setMotionReady(motionGranted);
-
     if (microphoneGranted && motionGranted) {
-      setPermissionStatusText('권한 확인이 완료되어 측정을 진행할 수 있어요.');
       return true;
     }
 
     if (!microphoneGranted && !motionGranted) {
-      setPermissionStatusText('마이크와 센서 권한이 모두 필요해요.');
       return false;
     }
 
     if (!microphoneGranted) {
-      setPermissionStatusText('소음 측정을 위해 마이크 권한이 필요해요.');
       return false;
     }
 
-    setPermissionStatusText('진동 측정을 위해 센서 권한이 필요해요.');
     return false;
   };
 
   const measureNoiseAndVibration = async (durationMs: number) => {
     latestMeteringRef.current = null;
-    setHasMeasuredNoise(false);
-    setHasMeasuredVibration(false);
     setIsMeasuringNoise(true);
-    setIsMeasuringVibration(true);
     setAudioSnapshot(null);
     setVibrationSnapshot(null);
     setNoisePattern(null);
@@ -554,13 +456,9 @@ export default function StressDiagnosisScreen() {
     vibrationPatternSamplesRef.current = [];
     lastVibrationPatternUpdateRef.current = 0;
     latestAudioSnapshotRef.current = null;
-    setNoiseMeasurementLabel('소음을 측정하고 있어요...');
-    setVibrationMeasurementLabel('진동을 측정하고 있어요...');
-
     try {
       const isAvailable = await Accelerometer.isAvailableAsync();
       if (!isAvailable) {
-        setVibrationMeasurementLabel('이 기기에서는 진동 센서를 사용할 수 없어요.');
         return { noise: null, vibration: null };
       }
 
@@ -592,9 +490,6 @@ export default function StressDiagnosisScreen() {
             },
           ];
           setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current, now));
-          setNoiseMeasurementLabel(
-            `${displayDb} dB · ${formatFrequencyHz(snapshot.peakFrequencyHz)} · ${getDominantBandLabel(snapshot)}`
-          );
         });
         const initialSnapshot = await startAndroidAudioAnalyzer(44100, 2048);
         latestAudioSnapshotRef.current = initialSnapshot;
@@ -647,21 +542,13 @@ export default function StressDiagnosisScreen() {
         setAmbientNoiseDb(String(estimatedDb));
         setAudioSnapshot(nativeSnapshot);
         setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current));
-        setHasMeasuredNoise(true);
-        setNoiseMeasurementLabel(
-          `${estimatedDb} dB · ${formatFrequencyHz(nativeSnapshot.peakFrequencyHz)} · ${getDominantBandLabel(nativeSnapshot)}`
-        );
       } else if (metering === null) {
-        setNoiseMeasurementLabel('유효한 소음 값을 읽지 못했어요. 다시 측정해 주세요.');
       } else {
         estimatedDb = mapMeteringToDb(metering);
         setAmbientNoiseDb(String(estimatedDb));
-        setHasMeasuredNoise(true);
-        setNoiseMeasurementLabel(`${estimatedDb} dB로 측정됐어요.`);
       }
 
       if (!samples.length) {
-        setVibrationMeasurementLabel('유효한 진동 값을 읽지 못했어요. 다시 측정해 주세요.');
         return { noise: estimatedDb, vibration: null };
       }
 
@@ -677,16 +564,8 @@ export default function StressDiagnosisScreen() {
       setVibrationLevel(level);
       setVibrationSnapshot(analyzeVibrationSamples(samples, actualSampleRate));
       setVibrationPattern(analyzeVibrationPattern(vibrationPatternSamplesRef.current));
-      setHasMeasuredVibration(true);
-      setVibrationMeasurementLabel(`${getVibrationBandLabel(level)} (${level}/10)로 측정됐어요.`);
       return { noise: estimatedDb, vibration: level };
-    } catch (error) {
-      setNoiseMeasurementLabel(
-        error instanceof Error ? error.message : '소음 측정 중 문제가 발생했어요.'
-      );
-      setVibrationMeasurementLabel(
-        error instanceof Error ? error.message : '진동 측정 중 문제가 발생했어요.'
-      );
+    } catch {
       return { noise: null, vibration: null };
     } finally {
       try {
@@ -700,7 +579,6 @@ export default function StressDiagnosisScreen() {
       void stopAndroidAudioAnalyzer();
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = null;
-      setIsMeasuringVibration(false);
       setIsMeasuringNoise(false);
     }
   };
@@ -716,8 +594,6 @@ export default function StressDiagnosisScreen() {
 
     try {
       setIsRunningMeasurement(true);
-      setHasMeasuredNoise(false);
-      setHasMeasuredVibration(false);
       setAmbientNoiseDb('');
       setVibrationLevel(0);
       setAudioSnapshot(null);
@@ -728,11 +604,8 @@ export default function StressDiagnosisScreen() {
       vibrationPatternSamplesRef.current = [];
       lastVibrationPatternUpdateRef.current = 0;
       latestAudioSnapshotRef.current = null;
-      setAiPreview(null);
       setStep('measuring');
       setRemainingSeconds(selectedOption.durationSec);
-      setNoiseMeasurementLabel('소음을 측정하고 있어요...');
-      setVibrationMeasurementLabel('진동을 측정하고 있어요...');
 
       const permissionsReady = await ensureMeasurementPermissions();
       if (!permissionsReady) {
@@ -771,8 +644,6 @@ export default function StressDiagnosisScreen() {
     setAmbientNoiseDb('');
     setVibrationLevel(0);
     setDirectSunlight(false);
-    setHasMeasuredNoise(false);
-    setHasMeasuredVibration(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
     setAudioSnapshot(null);
@@ -783,9 +654,6 @@ export default function StressDiagnosisScreen() {
     vibrationPatternSamplesRef.current = [];
     lastVibrationPatternUpdateRef.current = 0;
     latestAudioSnapshotRef.current = null;
-    setAiPreview(null);
-    setNoiseMeasurementLabel('아직 소음 측정을 진행하지 않았어요.');
-    setVibrationMeasurementLabel('아직 진동 측정을 진행하지 않았어요.');
   };
 
   const handleSaveReport = async () => {

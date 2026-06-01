@@ -48,7 +48,7 @@ export type StressAiPayload = {
     label: string;
   };
   interpretationRules: {
-    priorityFactors: Array<'noise' | 'vibration' | 'direct_sunlight'>;
+    priorityFactors: ('noise' | 'vibration' | 'direct_sunlight')[];
     groupGuidance: string;
     doNotChangeVerdict: true;
   };
@@ -73,7 +73,7 @@ function getVibrationBandLabel(level: number) {
   return '매우 낮음';
 }
 
-function getPriorityFactors(groupInfo: StressAnimalGroupInfo): Array<'noise' | 'vibration' | 'direct_sunlight'> {
+function getPriorityFactors(groupInfo: StressAnimalGroupInfo): ('noise' | 'vibration' | 'direct_sunlight')[] {
   if (groupInfo.group === 'reptile') {
     return ['vibration', 'direct_sunlight', 'noise'];
   }

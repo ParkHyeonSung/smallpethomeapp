@@ -162,7 +162,7 @@ export default function SimulationDetailScreen() {
     });
 
     return unsubscribe;
-  }, [isDraft, navigation, simulation]);
+  }, [isDraft, navigation, simulation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
   const objectOverlayPosition =
