@@ -1,4 +1,18 @@
 import { supabase } from '@/src/lib/supabase';
+import { upsertMyProfile } from '@/src/lib/profiles';
+
+function formatFollowError(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message;
+  }
+
+  return '팔로우 처리 중 오류가 발생했습니다.';
+}
 
 async function getCurrentUserId() {
   const {
@@ -7,7 +21,7 @@ async function getCurrentUserId() {
   } = await supabase.auth.getUser();
 
   if (error) {
-    throw error;
+    throw new Error(formatFollowError(error));
   }
 
   if (!user) {
@@ -24,7 +38,7 @@ export async function getFollowerCount(userId: string) {
     .eq('following_id', userId);
 
   if (error) {
-    throw error;
+    throw new Error(formatFollowError(error));
   }
 
   return count ?? 0;
@@ -45,7 +59,7 @@ export async function isFollowingUser(targetUserId: string) {
     .maybeSingle();
 
   if (error) {
-    throw error;
+    throw new Error(formatFollowError(error));
   }
 
   return Boolean(data);
@@ -58,13 +72,23 @@ export async function followUser(targetUserId: string) {
     throw new Error('자기 자신은 팔로우할 수 없습니다.');
   }
 
-  const { error } = await supabase.from('follows').insert({
-    follower_id: currentUserId,
-    following_id: targetUserId,
-  });
+  await upsertMyProfile();
+
+  const { error } = await supabase
+    .from('follows')
+    .upsert(
+      {
+        follower_id: currentUserId,
+        following_id: targetUserId,
+      },
+      {
+        ignoreDuplicates: true,
+        onConflict: 'follower_id,following_id',
+      }
+    );
 
   if (error) {
-    throw error;
+    throw new Error(formatFollowError(error));
   }
 }
 
@@ -78,6 +102,6 @@ export async function unfollowUser(targetUserId: string) {
     .eq('following_id', targetUserId);
 
   if (error) {
-    throw error;
+    throw new Error(formatFollowError(error));
   }
 }

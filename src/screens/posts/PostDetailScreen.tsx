@@ -32,6 +32,15 @@ import { supabase } from '@/src/lib/supabase';
 
 const COMMENT_SHEET_Y = 640;
 
+async function loadOptional<T>(label: string, promise: Promise<T>, fallback: T) {
+  try {
+    return await promise;
+  } catch (error) {
+    console.warn(`[PostDetailScreen] ${label} failed`, error);
+    return fallback;
+  }
+}
+
 export default function PostDetailScreen() {
   const params = useLocalSearchParams();
   const idParam = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -106,27 +115,31 @@ export default function PostDetailScreen() {
     const load = async () => {
       try {
         setIsLoading(true);
-        const [{ data: auth }, nextPost, nextComments, nextTags, likedIds, nextImages] = await Promise.all([
-          supabase.auth.getUser(),
-          getPostById(postId),
-          getCommentsByPostId(postId),
-          getPostTagsByPostId(postId),
-          getMyLikedPostIds(),
-          getPostImagesByPostId(postId),
+        const nextPost = await getPostById(postId);
+        const authUserId = await loadOptional(
+          'auth user load',
+          supabase.auth.getUser().then(({ data }) => data.user?.id ?? null),
+          null
+        );
+        const [nextComments, nextTags, likedIds, nextImages] = await Promise.all([
+          loadOptional('comments load', getCommentsByPostId(postId), []),
+          loadOptional('product tags load', getPostTagsByPostId(postId), []),
+          loadOptional('liked posts load', getMyLikedPostIds(), new Set<string>()),
+          loadOptional('post images load', getPostImagesByPostId(postId), []),
         ]);
 
         setPost(nextPost);
         setComments(nextComments);
         setTags(nextTags);
         setPostImages(nextImages);
-        setCurrentUserId(auth.user?.id ?? null);
+        setCurrentUserId(authUserId);
         setIsLiked(likedIds.has(nextPost.id));
 
-        const nextFollowerCount = await getFollowerCount(nextPost.author_id);
+        const nextFollowerCount = await loadOptional('follower count load', getFollowerCount(nextPost.author_id), 0);
         setFollowerCount(nextFollowerCount);
 
-        if (auth.user?.id && auth.user.id !== nextPost.author_id) {
-          setIsFollowing(await isFollowingUser(nextPost.author_id));
+        if (authUserId && authUserId !== nextPost.author_id) {
+          setIsFollowing(await loadOptional('follow state load', isFollowingUser(nextPost.author_id), false));
         } else {
           setIsFollowing(false);
         }

@@ -45,6 +45,7 @@ export default function LoginScreen() {
       } = await supabase.auth.getSession();
 
       if (session && isMounted) {
+        await upsertMyProfile();
         router.replace('/(tabs)');
       }
     };
