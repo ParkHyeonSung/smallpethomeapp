@@ -1,4 +1,4 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -999,7 +999,7 @@ function clamp(value: number, min: number, max: number) {
 const styles = StyleSheet.create({
   simulatorScreen: {
     flex: 1,
-    backgroundColor: '#DDE9E2',
+    backgroundColor: colors.background,
   },
   stage: {
     flex: 1,
@@ -1040,27 +1040,27 @@ const styles = StyleSheet.create({
   floatingControlButton: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(143, 185, 168, 0.32)',
-    shadowColor: '#102019',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    elevation: 8,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
   },
   floatingControlButtonSmall: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
   },
   floatingControlButtonLarge: {
     width: 54,
     height: 54,
-    borderRadius: 27,
+    borderRadius: 12,
   },
   mirroredIcon: {
     transform: [{ scaleX: -1 }],
@@ -1079,44 +1079,44 @@ const styles = StyleSheet.create({
   circleButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(143, 185, 168, 0.35)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   headerBadge: {
     flex: 1,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 18,
+    borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(143, 185, 168, 0.35)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   headerTitle: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.text,
   },
   headerMeta: {
     marginTop: 2,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textMuted,
   },
   headerSaveButton: {
     minHeight: 44,
     paddingHorizontal: 16,
-    borderRadius: 22,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
   },
   headerSaveText: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   bottomPanel: {
@@ -1126,16 +1126,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 300,
     overflow: 'hidden',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     backgroundColor: colors.surface,
     paddingHorizontal: 16,
     paddingTop: 0,
     paddingBottom: 18,
-    shadowColor: '#102019',
-    shadowOffset: { width: 0, height: -12 },
-    shadowOpacity: 0.14,
-    shadowRadius: 24,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
     elevation: 12,
   },
   panelHandleArea: {
@@ -1145,10 +1145,10 @@ const styles = StyleSheet.create({
   },
   panelHandle: {
     alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: '#C9D3CE',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D1D6',
   },
   tabRow: {
     flexDirection: 'row',
@@ -1162,7 +1162,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     minHeight: 42,
-    borderRadius: 999,
+    borderRadius: 12,
     backgroundColor: colors.primaryLight,
   },
   tabButtonActive: {
@@ -1170,7 +1170,7 @@ const styles = StyleSheet.create({
   },
   tabButtonText: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '600',
     color: colors.primaryStrong,
   },
   tabButtonTextActive: {
@@ -1188,7 +1188,7 @@ const styles = StyleSheet.create({
     width: 190,
     minHeight: 124,
     padding: 14,
-    borderRadius: 20,
+    borderRadius: 12,
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1196,24 +1196,24 @@ const styles = StyleSheet.create({
   placeIcon: {
     width: 42,
     height: 42,
-    borderRadius: 16,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surfaceMuted,
     marginBottom: 10,
   },
   cageCard: {
     width: 280,
     gap: 12,
     padding: 14,
-    borderRadius: 20,
+    borderRadius: 12,
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
   },
   cardTitle: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.text,
   },
   cardDescription: {
@@ -1229,12 +1229,12 @@ const styles = StyleSheet.create({
   emptyEditPanel: {
     width: '100%',
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 12,
     backgroundColor: colors.background,
   },
   emptyTitle: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.text,
   },
   emptyText: {
@@ -1259,7 +1259,7 @@ const styles = StyleSheet.create({
   },
   groupTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.primaryStrong,
   },
   inputGrid: {
@@ -1272,12 +1272,12 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.text,
   },
   input: {
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 9,
@@ -1311,35 +1311,35 @@ const styles = StyleSheet.create({
   },
   objectChipText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     color: colors.text,
   },
   removeButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 42,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: '#FFF3F3',
     borderWidth: 1,
     borderColor: '#F2B7B7',
   },
   removeButtonText: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '600',
     color: colors.danger,
   },
   deleteButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 42,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: '#FFF3F3',
     borderWidth: 1,
     borderColor: '#F2B7B7',
   },
   deleteButtonText: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '600',
     color: colors.danger,
   },
   centerContent: {
@@ -1350,19 +1350,19 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: 44,
     paddingHorizontal: 18,
-    borderRadius: 16,
+    borderRadius: 10,
     backgroundColor: colors.primary,
   },
   primaryButtonText: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   stateTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
