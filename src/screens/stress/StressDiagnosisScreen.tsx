@@ -24,23 +24,24 @@ import {
   stopAndroidAudioAnalyzer,
 } from '@/src/lib/android-audio-analyzer';
 import {
-  analyzeNoisePattern,
-  analyzeVibrationPattern,
   NoisePatternSample,
-  StressPatternAnalysis,
   VibrationPatternSample,
 } from '@/src/lib/stress-patterns';
+import {
+  buildStressAiPayload,
+  generateStressAiResult,
+  StressAiResult,
+} from '@/src/lib/stress-ai';
 import {
   buildStressDiagnosisReport,
   StressDiagnosisInput,
 } from '@/src/lib/stress-diagnosis';
 import { saveStressReport } from '@/src/lib/stress-reports';
-import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
 import {
-  analyzeVibrationSamples,
-  getDominantVibrationBandLabel,
-  VibrationAnalyzerSnapshot,
-} from '@/src/lib/vibration-analyzer';
+  resolveStressAnimalGroup,
+  STRESS_ANIMAL_CATEGORY_OPTIONS,
+  StressAnimalCategory,
+} from '@/src/lib/stress-animal-groups';
 
 const recorderOptions = {
   ...RecordingPresets.LOW_QUALITY,
@@ -60,8 +61,6 @@ const MEASUREMENT_OPTIONS = {
   },
 } as const;
 
-const SPECIES_OPTIONS = ['설치류', '기니피그', '토끼', '파충류', '기타 포유류'] as const;
-const OTHER_MAMMAL_SUB = ['고슴도치', '슈가글라이더', '페럿'] as const;
 const VIBRATION_SAMPLE_INTERVAL_MS = 5;
 
 type MeasurementType = keyof typeof MEASUREMENT_OPTIONS;
@@ -83,134 +82,67 @@ function mapVibrationRmsToLevel(rms: number) {
   return clamp(Math.round(rms * 42), 0, 10);
 }
 
-function getVibrationBandLabel(level: number) {
-  if (level >= 8) return '매우 높음';
-  if (level >= 6) return '높음';
-  if (level >= 4) return '보통';
-  if (level >= 2) return '낮음';
-  return '매우 낮음';
-}
+function downsamplePeakSamples(samples: { timestampMs: number; value: number }[], maxCount: number) {
+  if (samples.length <= maxCount) return samples;
 
-function formatFrequencyHz(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '- Hz';
+  const bucketSize = Math.ceil(samples.length / maxCount);
+  const result: { timestampMs: number; value: number }[] = [];
+
+  for (let index = 0; index < samples.length; index += bucketSize) {
+    const bucket = samples.slice(index, index + bucketSize);
+    const peak = bucket.reduce((max, sample) => (sample.value > max.value ? sample : max), bucket[0]);
+    result.push(peak);
   }
 
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(1)} kHz`;
-  }
-
-  return `${Math.round(value)} Hz`;
-}
-
-function getDominantBandLabel(snapshot: AndroidAudioAnalyzerSnapshot | null) {
-  if (!snapshot) {
-    return '분석 대기';
-  }
-
-  const bands = [
-    { label: '저주파', value: snapshot.lowBandLevel },
-    { label: '중주파', value: snapshot.midBandLevel },
-    { label: '고주파', value: snapshot.highBandLevel },
-  ];
-  return bands.sort((a, b) => b.value - a.value)[0]?.label ?? '분석 대기';
-}
-
-function downsamplePoints<T>(items: T[], maxCount: number) {
-  if (items.length <= maxCount) return items;
-
-  const step = (items.length - 1) / (maxCount - 1);
-  return Array.from({ length: maxCount }, (_, index) => items[Math.round(index * step)]);
-}
-
-function getSmoothPoints(points: { x: number; y: number }[]) {
-  if (points.length < 3) return points;
-
-  const smoothPoints: { x: number; y: number }[] = [];
-  const segments = 10;
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const p0 = points[Math.max(index - 1, 0)];
-    const p1 = points[index];
-    const p2 = points[index + 1];
-    const p3 = points[Math.min(index + 2, points.length - 1)];
-
-    for (let step = 0; step < segments; step += 1) {
-      const t = step / segments;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const x =
-        0.5 *
-        (2 * p1.x +
-          (-p0.x + p2.x) * t +
-          (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-          (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
-      const y =
-        0.5 *
-        (2 * p1.y +
-          (-p0.y + p2.y) * t +
-          (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-          (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
-      smoothPoints.push({ x, y });
-    }
-  }
-
-  smoothPoints.push(points[points.length - 1]);
-  return smoothPoints;
+  return result.sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
 type RiskGraphProps = {
   title: string;
-  value: number;
   unit: string;
   maxValue: number;
   cautionValue: number;
   warningValue: number;
-  patternLabel?: string;
-  detail: string;
+  stats: string[];
   samples: { timestampMs: number; value: number }[];
   chartWidth: number;
 };
 
 function RiskGraph({
   title,
-  value,
   unit,
   maxValue,
   cautionValue,
   warningValue,
-  patternLabel,
-  detail,
+  stats,
   samples,
   chartWidth,
 }: RiskGraphProps) {
-  const safeValue = clamp(value, 0, maxValue);
   const chartHeight = 190;
   const chartPadding = 4;
   const drawableWidth = Math.max(chartWidth - chartPadding * 2, 1);
   const drawableHeight = Math.max(chartHeight - chartPadding * 2, 1);
-  const sortedSamples = downsamplePoints(
+  const sortedSamples = downsamplePeakSamples(
     samples.filter((sample) => Number.isFinite(sample.value)).sort((a, b) => a.timestampMs - b.timestampMs),
     90
   );
-  const displaySamples = sortedSamples.map((sample, index) => {
-    const windowStart = Math.max(index - 2, 0);
-    const windowEnd = Math.min(index + 3, sortedSamples.length);
-    const windowSamples = sortedSamples.slice(windowStart, windowEnd);
-    const averagedValue =
-      windowSamples.reduce((sum, current) => sum + current.value, 0) / Math.max(windowSamples.length, 1);
-
-    return { ...sample, value: averagedValue };
-  });
   const startMs = sortedSamples[0]?.timestampMs ?? 0;
   const endMs = sortedSamples[sortedSamples.length - 1]?.timestampMs ?? startMs + 1;
   const durationMs = Math.max(endMs - startMs, 1);
-  const points = displaySamples.map((sample) => {
+  const graphSamples = sortedSamples.length
+    ? [
+        { timestampMs: startMs, value: 0 },
+        ...sortedSamples.map((sample, index) =>
+          index === 0 ? { ...sample, timestampMs: startMs + 1 } : sample
+        ),
+      ]
+    : [];
+  const points = graphSamples.map((sample) => {
     const x = chartPadding + ((sample.timestampMs - startMs) / durationMs) * drawableWidth;
     const y = chartPadding + drawableHeight - (clamp(sample.value, 0, maxValue) / maxValue) * drawableHeight;
     return { x, y, value: sample.value };
   });
-  const smoothPoints = getSmoothPoints(points).map((point) => ({
+  const linePoints = points.map((point) => ({
     x: clamp(point.x, chartPadding, chartWidth - chartPadding),
     y: clamp(point.y, chartPadding, chartHeight - chartPadding),
   }));
@@ -224,33 +156,32 @@ function RiskGraph({
   return (
     <View style={styles.riskGraphCard}>
       <View style={styles.riskGraphHeader}>
-        <View>
-          <Text style={styles.riskGraphTitle}>{title}</Text>
-          <Text style={styles.riskGraphDetail}>{detail}</Text>
-        </View>
-        <View style={styles.riskValueWrap}>
-          <Text style={styles.riskValue}>{Math.round(safeValue)}</Text>
-          <Text style={styles.riskUnit}>{unit}</Text>
+        <Text style={styles.riskGraphTitle}>{title}</Text>
+        <View style={styles.riskGraphStats}>
+          {stats.map((stat) => (
+            <Text key={stat} style={styles.riskGraphStatText}>
+              {stat}
+            </Text>
+          ))}
         </View>
       </View>
 
-      <View style={styles.chartWithAxis}>
-        <View style={styles.yAxisLabels}>
-          <Text style={styles.axisText}>{Math.round(maxValue)}{unit}</Text>
-          <Text style={styles.axisText}>0{unit}</Text>
-        </View>
-        <View>
+      <View style={styles.chartBlock}>
           <View style={[styles.lineChartWrap, { width: chartWidth }]}>
             <View style={[styles.lineDangerArea, { height: warningY }]} />
             <View style={[styles.lineCautionArea, { top: warningY, height: cautionY - warningY }]} />
             <View style={[styles.lineThresholdHorizontal, { top: warningY }]} />
             <View style={[styles.lineThresholdHorizontal, { top: cautionY }]} />
+            <View style={styles.yAxisOverlay}>
+              <Text style={styles.axisOverlayText}>{Math.round(maxValue)}{unit}</Text>
+              <Text style={styles.axisOverlayText}>0{unit}</Text>
+            </View>
             {tenSecondTicks.map((seconds) => {
               const left = `${((seconds * 1000) / durationMs) * 100}%` as DimensionValue;
               return <View key={seconds} style={[styles.timeTickLine, { left }]} />;
             })}
-            {smoothPoints.slice(1).map((point, index) => {
-              const previous = smoothPoints[index];
+            {linePoints.slice(1).map((point, index) => {
+              const previous = linePoints[index];
               const dx = point.x - previous.x;
               const dy = point.y - previous.y;
               const length = Math.sqrt(dx * dx + dy * dy);
@@ -279,10 +210,252 @@ function RiskGraph({
               </Text>
             ))}
           </View>
-        </View>
       </View>
 
-      {patternLabel ? <Text style={styles.riskPatternText}>{patternLabel}</Text> : null}
+    </View>
+  );
+}
+
+function getAverageValue(values: number[], fallback: number) {
+  const finiteValues = values.filter(Number.isFinite);
+  if (!finiteValues.length) return fallback;
+
+  return finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
+}
+
+function getMaxValue(values: number[], fallback: number) {
+  const finiteValues = values.filter(Number.isFinite);
+  if (!finiteValues.length) return fallback;
+
+  return Math.max(...finiteValues);
+}
+
+function getPercentileValue(values: number[], percentile: number, fallback: number) {
+  const finiteValues = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!finiteValues.length) return fallback;
+
+  const index = Math.min(finiteValues.length - 1, Math.max(0, Math.ceil(finiteValues.length * percentile) - 1));
+  return finiteValues[index];
+}
+
+function getSuitabilityLabel(level: string) {
+  if (level === 'warning') return '부적합';
+  if (level === 'caution') return '주의 필요';
+  return '적합';
+}
+
+function getNoiseAiInterpretation(averageDb: number, maxDb: number, animalLabel: string) {
+  const averageText =
+    averageDb >= 75
+      ? '생활 소음이 계속 크게 느껴질 수 있는 수준'
+      : averageDb >= 65
+        ? '주변 생활 소음이 어느 정도 있는 수준'
+        : '큰 소음이 오래 이어지지는 않은 수준';
+  const maxText =
+    maxDb >= 90
+      ? '사육장 위치로는 부담이 큰 순간 소음'
+      : maxDb >= 80
+        ? '갑자기 큰 소리가 들어온 구간'
+        : maxDb >= 65
+          ? '일상적인 소리 변화가 들어온 구간'
+          : '큰 소리 변화가 두드러지지 않은 구간';
+
+  if (maxDb >= 90) {
+    return `평균 ${averageDb} dB는 ${averageText}입니다. 최대 ${maxDb} dB는 ${animalLabel}에게 부담이 될 수 있는 ${maxText}으로, TV·스피커·청소기·문 여닫힘 같은 소음원을 확인해 주세요.`;
+  }
+
+  if (maxDb >= 80) {
+    return `평균 ${averageDb} dB는 ${averageText}입니다. 최대 ${maxDb} dB는 ${maxText}으로, 같은 소리가 반복되는 위치인지 확인하는 것이 좋습니다.`;
+  }
+
+  if (averageDb >= 65) {
+    return `평균 ${averageDb} dB는 ${averageText}입니다. 최대 ${maxDb} dB는 ${maxText}이라서, 바로 부적합으로 보긴 어렵지만 더 조용한 위치와 비교해 볼 수 있습니다.`;
+  }
+
+  return `평균 ${averageDb} dB는 ${averageText}입니다. 최대 ${maxDb} dB도 ${maxText}이라서, 측정 시간 기준으로는 소음이 크게 두드러지지 않았습니다.`;
+}
+
+function getVibrationStateLabel(level: number) {
+  if (level >= 8) return '강한 흔들림';
+  if (level >= 6) return '뚜렷한 흔들림';
+  if (level >= 3) return '약한 흔들림';
+  return '안정';
+}
+
+function getVibrationAiInterpretation(averageState: string, peakState: string) {
+  if (peakState === '강한 흔들림') {
+    return `측정 대부분의 시간에는 ${averageState} 상태로 해석됩니다. 다만 짧게 강한 흔들림이 감지된 순간이 있어, 스피커·세탁기·냉장고·흔들리는 선반처럼 진동이 케이지로 이어질 수 있는 물건을 확인해 주세요.`;
+  }
+
+  if (peakState === '뚜렷한 흔들림') {
+    return `측정 대부분의 시간에는 ${averageState} 상태로 해석됩니다. 일부 구간에서 흔들림이 뚜렷하게 나타났으므로 받침대가 단단한지, 사람이 자주 건드리는 위치는 아닌지 확인하는 것이 좋습니다.`;
+  }
+
+  if (averageState === '약한 흔들림' || peakState === '약한 흔들림') {
+    return `측정 중 약한 흔들림이 일부 감지되었습니다. 장시간 머무르는 사육장 위치라면 더 안정적인 바닥이나 받침대와 비교해 볼 수 있습니다.`;
+  }
+
+  return `측정 시간 동안 큰 흔들림은 두드러지지 않았습니다. 현재 위치는 진동 면에서는 비교적 안정적으로 볼 수 있습니다.`;
+}
+
+function getVibrationSummary(averageState: string, peakState: string) {
+  if (peakState === '강한 흔들림') {
+    return {
+      averageState,
+      peakState: '짧게 큰 흔들림 감지',
+      pattern: averageState === '안정' ? '순간 피크' : '강한 흔들림 구간',
+      meaning:
+        averageState === '안정'
+          ? '대부분의 시간에는 흔들림이 크지 않았지만, 측정 중 짧은 순간 큰 흔들림이 감지되었습니다.'
+          : '측정 중 흔들림이 있는 상태에서 짧게 더 큰 흔들림이 함께 감지되었습니다.',
+      guidance:
+        '받침대, 선반, 주변 기기 진동 또는 측정 중 휴대폰 움직임을 확인하세요.',
+    };
+  }
+
+  if (peakState === '뚜렷한 흔들림') {
+    return {
+      averageState,
+      peakState,
+      pattern: averageState === '안정' ? '일부 구간 흔들림' : '반복 가능 흔들림',
+      meaning:
+        averageState === '안정'
+          ? '대부분의 시간에는 안정적이지만, 일부 구간에서 뚜렷한 흔들림이 감지되었습니다.'
+          : '측정 중 흔들림이 비교적 자주 감지되어 받침대나 주변 기기 영향을 확인할 필요가 있습니다.',
+      guidance:
+        '사육장을 올릴 받침대가 단단한지, 사람이 자주 건드리는 책상이나 선반은 아닌지 확인하세요.',
+    };
+  }
+
+  if (averageState === '약한 흔들림' || peakState === '약한 흔들림') {
+    return {
+      averageState,
+      peakState,
+      pattern: '약한 흔들림',
+      meaning: '측정 중 약한 흔들림이 일부 감지되었습니다.',
+      guidance: '장시간 사육장 위치로 쓸 곳이라면 더 안정적인 바닥이나 받침대와 비교해 보세요.',
+    };
+  }
+
+  return {
+    averageState,
+    peakState,
+    pattern: '안정',
+    meaning: '측정 시간 동안 큰 흔들림은 두드러지지 않았습니다.',
+    guidance: '현재 위치는 진동 면에서는 비교적 안정적으로 볼 수 있습니다.',
+  };
+}
+
+function getNoiseFrequencySummary(samples: NoisePatternSample[]) {
+  const validSamples = samples.filter((sample) => sample.peakFrequencyHz > 0);
+  if (!validSamples.length) {
+    return {
+      peakFrequencyHz: 0,
+      dominantBand: '분석 대기',
+      highFrequencyLevel: '낮음',
+      lowFrequencyMarkerLevel: '낮음',
+      lowBandRatio: 0,
+      midBandRatio: 0,
+      highBandRatio: 0,
+      summary: '주파수 분석을 위한 소음 샘플이 아직 충분하지 않습니다.',
+    };
+  }
+
+  const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+  const peakFrequencyHz = validSamples.reduce((max, sample) =>
+    sample.approxDb > max.approxDb ? sample : max
+  ).peakFrequencyHz;
+  const lowBand = average(validSamples.map((sample) => sample.lowBandLevel));
+  const midBand = average(validSamples.map((sample) => sample.midBandLevel));
+  const highBand = average(validSamples.map((sample) => sample.highBandLevel));
+  const lowMarker = average(
+    validSamples.map((sample) => Math.max(sample.marker32HzLevel, sample.marker125HzLevel))
+  );
+  const dominantBand =
+    lowBand >= midBand && lowBand >= highBand
+      ? '저주파'
+      : highBand >= lowBand && highBand >= midBand
+        ? '고주파'
+        : '중주파';
+  const highFrequencyLevel = highBand >= 0.55 ? '높음' : highBand >= 0.3 ? '보통' : '낮음';
+  const lowFrequencyMarkerLevel = lowMarker >= 0.55 ? '높음' : lowMarker >= 0.3 ? '보통' : '낮음';
+  const maxBand = Math.max(lowBand, midBand, highBand, 0.01);
+
+  const summary =
+    dominantBand === '저주파'
+      ? '낮은 대역의 소리가 함께 감지되어 가전제품의 웅웅거림이나 바닥을 타고 전달되는 소리를 확인해 볼 수 있습니다.'
+      : dominantBand === '고주파'
+        ? '높은 대역의 소리가 함께 감지되어 전자기기음, 금속성 울림, 삐 소리 같은 자극을 확인해 볼 수 있습니다.'
+        : '일반 생활 소음에 가까운 중간 대역이 주로 감지되었습니다.';
+
+  return {
+    peakFrequencyHz,
+    dominantBand,
+    highFrequencyLevel,
+    lowFrequencyMarkerLevel,
+    lowBandRatio: clamp(lowBand / maxBand, 0, 1),
+    midBandRatio: clamp(midBand / maxBand, 0, 1),
+    highBandRatio: clamp(highBand / maxBand, 0, 1),
+    summary,
+  };
+}
+
+type MeasurementAiBlockProps = {
+  interpretation: string;
+};
+
+function MeasurementAiBlock({ interpretation }: MeasurementAiBlockProps) {
+  return (
+    <View style={styles.measurementAiBlock}>
+      <Text style={styles.measurementAiLabel}>AI 해석</Text>
+      <Text style={styles.measurementAiText}>{interpretation}</Text>
+    </View>
+  );
+}
+
+type FrequencyAnalysisCardProps = {
+  dominantBand: string;
+  highFrequencyLevel: string;
+  lowFrequencyMarkerLevel: string;
+  lowBandRatio: number;
+  midBandRatio: number;
+  highBandRatio: number;
+  summary: string;
+};
+
+function FrequencyAnalysisCard({
+  lowBandRatio,
+  midBandRatio,
+  highBandRatio,
+  summary,
+}: FrequencyAnalysisCardProps) {
+  const bars = [
+    { label: '낮은 대역', value: lowBandRatio },
+    { label: '중간 대역', value: midBandRatio },
+    { label: '높은 대역', value: highBandRatio },
+  ];
+
+  return (
+    <View style={styles.frequencyAnalysisCard}>
+      <View style={styles.frequencyAnalysisHeader}>
+        <Text style={styles.frequencyAnalysisTitle}>주파수 분석</Text>
+      </View>
+      <View style={styles.frequencyBars}>
+        {bars.map((bar) => (
+          <View key={bar.label} style={styles.frequencyBarRow}>
+            <Text style={styles.frequencyBarLabel}>{bar.label}</Text>
+            <View style={styles.frequencyBarTrack}>
+              <View
+                style={[
+                  styles.frequencyBarFill,
+                  { width: `${Math.max(6, Math.round(bar.value * 100))}%` as DimensionValue },
+                ]}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.frequencyAnalysisText}>{summary}</Text>
     </View>
   );
 }
@@ -340,13 +513,13 @@ export default function StressDiagnosisScreen() {
   const latestAudioSnapshotRef = useRef<AndroidAudioAnalyzerSnapshot | null>(null);
   const noisePatternSamplesRef = useRef<NoisePatternSample[]>([]);
   const vibrationPatternSamplesRef = useRef<VibrationPatternSample[]>([]);
-  const lastVibrationPatternUpdateRef = useRef(0);
   const latestMeteringRef = useRef<number | null>(null);
   const measurementRunIdRef = useRef(0);
 
   const [step, setStep] = useState<Step>('select');
   const [measurementType, setMeasurementType] = useState<MeasurementType>('quick');
-  const [species, setSpecies] = useState<string>('설치류');
+  const [animalCategory, setAnimalCategory] = useState<StressAnimalCategory>('rodent');
+  const [species, setSpecies] = useState<string>('마우스·랫');
   const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
   const [vibrationLevel, setVibrationLevel] = useState(0);
   const [directSunlight, setDirectSunlight] = useState(false);
@@ -355,12 +528,15 @@ export default function StressDiagnosisScreen() {
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [isRunningMeasurement, setIsRunningMeasurement] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
-  const [audioSnapshot, setAudioSnapshot] = useState<AndroidAudioAnalyzerSnapshot | null>(null);
-  const [vibrationSnapshot, setVibrationSnapshot] = useState<VibrationAnalyzerSnapshot | null>(null);
-  const [noisePattern, setNoisePattern] = useState<StressPatternAnalysis | null>(null);
-  const [vibrationPattern, setVibrationPattern] = useState<StressPatternAnalysis | null>(null);
+  const [aiResult, setAiResult] = useState<StressAiResult | null>(null);
 
   const selectedOption = MEASUREMENT_OPTIONS[measurementType];
+  const selectedAnimalCategory = useMemo(
+    () =>
+      STRESS_ANIMAL_CATEGORY_OPTIONS.find((categoryOption) => categoryOption.category === animalCategory) ??
+      STRESS_ANIMAL_CATEGORY_OPTIONS[0],
+    [animalCategory]
+  );
   const animalGroupInfo = useMemo(() => resolveStressAnimalGroup(species), [species]);
 
   const diagnosisInput = useMemo<StressDiagnosisInput>(
@@ -384,13 +560,35 @@ export default function StressDiagnosisScreen() {
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
   const noiseValue = ambientNoiseDb ? Number(ambientNoiseDb) : 0;
   const noiseWarningValue = animalGroupInfo.noiseWarningDb ?? Math.min(animalGroupInfo.noiseCautionDb + 10, 100);
-  const resultChartWidth = Math.max(260, Math.min(640, width - 68));
-  const vibrationMgValue = vibrationSnapshot ? vibrationSnapshot.rms * 1000 : 0;
-  const vibrationSamplesMg = vibrationPatternSamplesRef.current.map((sample) => ({
+  const resultChartWidth = Math.max(240, Math.min(640, width - 80));
+  const noiseSamples = noisePatternSamplesRef.current.map((sample) => ({
     timestampMs: sample.timestampMs,
-    value: sample.value * 1000,
+    value: sample.approxDb,
   }));
-  const vibrationMaxValue = 100;
+  const frequencySummary = getNoiseFrequencySummary(noisePatternSamplesRef.current);
+  const noiseAverageValue = Math.round(getAverageValue(noiseSamples.map((sample) => sample.value), noiseValue));
+  const noiseMaxValue = Math.round(getMaxValue(noiseSamples.map((sample) => sample.value), noiseValue));
+  const vibrationSamplesLevel = vibrationPatternSamplesRef.current.map((sample) => ({
+    timestampMs: sample.timestampMs,
+    value: mapVibrationRmsToLevel(sample.value),
+  }));
+  const vibrationAverageLevel = Math.round(
+    getAverageValue(vibrationSamplesLevel.map((sample) => sample.value), vibrationLevel)
+  );
+  const vibrationPeakLevel = Math.round(
+    getPercentileValue(vibrationSamplesLevel.map((sample) => sample.value), 0.95, vibrationLevel)
+  );
+  const vibrationAverageState = getVibrationStateLabel(vibrationAverageLevel);
+  const vibrationPeakState = getVibrationStateLabel(vibrationPeakLevel);
+  const vibrationSummary = useMemo(
+    () => getVibrationSummary(vibrationAverageState, vibrationPeakState),
+    [vibrationAverageState, vibrationPeakState]
+  );
+  const noiseAiInterpretation = getNoiseAiInterpretation(noiseAverageValue, noiseMaxValue, animalGroupInfo.label);
+  const vibrationAiInterpretation = getVibrationAiInterpretation(vibrationAverageState, vibrationPeakState);
+  const displayNoiseInterpretation = aiResult?.noiseInterpretation ?? noiseAiInterpretation;
+  const displayVibrationInterpretation = aiResult?.vibrationInterpretation ?? vibrationAiInterpretation;
+  const vibrationMaxValue = 10;
 
   useEffect(() => {
     if (!isMeasuringNoise || recorderState.metering === undefined) {
@@ -420,6 +618,68 @@ export default function StressDiagnosisScreen() {
     return () => clearInterval(interval);
   }, [isRunningMeasurement]);
 
+  useEffect(() => {
+    if (step !== 'result') {
+      return;
+    }
+
+    let cancelled = false;
+    const payload = buildStressAiPayload(diagnosisInput, {
+      measurementDurationSec: selectedOption.durationSec,
+      report,
+      measuredValues: {
+        averageDb: noiseAverageValue,
+        maxDb: noiseMaxValue,
+      },
+      vibrationSummary,
+      frequencyAnalysis: {
+        peakFrequencyHz: frequencySummary.peakFrequencyHz,
+        dominantBand: frequencySummary.dominantBand,
+        highFrequencyLevel: frequencySummary.highFrequencyLevel,
+        lowFrequencyMarkerLevel: frequencySummary.lowFrequencyMarkerLevel,
+        lowBandRatio: frequencySummary.lowBandRatio,
+        midBandRatio: frequencySummary.midBandRatio,
+        highBandRatio: frequencySummary.highBandRatio,
+        summary: frequencySummary.summary,
+      },
+    });
+
+    setAiResult(null);
+    generateStressAiResult(payload)
+      .then((result) => {
+        if (!cancelled) {
+          setAiResult(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiResult(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    diagnosisInput,
+    frequencySummary.dominantBand,
+    frequencySummary.highBandRatio,
+    frequencySummary.highFrequencyLevel,
+    frequencySummary.lowBandRatio,
+    frequencySummary.lowFrequencyMarkerLevel,
+    frequencySummary.midBandRatio,
+    frequencySummary.peakFrequencyHz,
+    frequencySummary.summary,
+    noiseAverageValue,
+    noiseMaxValue,
+    report,
+    selectedOption.durationSec,
+    step,
+    vibrationAverageState,
+    vibrationPeakState,
+    vibrationSummary,
+  ]);
+
   const ensureMeasurementPermissions = async () => {
     const microphonePermission = await AudioModule.requestRecordingPermissionsAsync();
     const microphoneGranted = microphonePermission.granted;
@@ -448,13 +708,9 @@ export default function StressDiagnosisScreen() {
   const measureNoiseAndVibration = async (durationMs: number) => {
     latestMeteringRef.current = null;
     setIsMeasuringNoise(true);
-    setAudioSnapshot(null);
-    setVibrationSnapshot(null);
-    setNoisePattern(null);
-    setVibrationPattern(null);
+    setAiResult(null);
     noisePatternSamplesRef.current = [];
     vibrationPatternSamplesRef.current = [];
-    lastVibrationPatternUpdateRef.current = 0;
     latestAudioSnapshotRef.current = null;
     try {
       const isAvailable = await Accelerometer.isAvailableAsync();
@@ -463,7 +719,6 @@ export default function StressDiagnosisScreen() {
       }
 
       const samples: number[] = [];
-      const sampleTimes: number[] = [];
       const useNativeAudioAnalyzer = isAndroidAudioAnalyzerAvailable();
       // Use a denser sampling interval so short low-amplitude vibrations are less likely
       // to be lost than they were with the previous coarse 100 ms polling.
@@ -473,7 +728,6 @@ export default function StressDiagnosisScreen() {
         audioAnalyzerSubscriptionRef.current?.remove();
         audioAnalyzerSubscriptionRef.current = addAndroidAudioAnalyzerListener((snapshot) => {
           latestAudioSnapshotRef.current = snapshot;
-          setAudioSnapshot(snapshot);
           const displayDb = mapRmsDbToApproxDisplayDb(snapshot.rmsDb);
           const now = Date.now();
           noisePatternSamplesRef.current = [
@@ -489,11 +743,9 @@ export default function StressDiagnosisScreen() {
               marker125HzLevel: snapshot.marker125HzLevel,
             },
           ];
-          setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current, now));
         });
         const initialSnapshot = await startAndroidAudioAnalyzer(44100, 2048);
         latestAudioSnapshotRef.current = initialSnapshot;
-        setAudioSnapshot(initialSnapshot);
       } else {
         await setAudioModeAsync({
           allowsRecording: true,
@@ -509,16 +761,11 @@ export default function StressDiagnosisScreen() {
         const magnitude = Math.sqrt(x * x + y * y + z * z);
         const deltaFromGravity = Math.abs(magnitude - 1);
         samples.push(deltaFromGravity);
-        sampleTimes.push(Date.now());
         const now = Date.now();
         vibrationPatternSamplesRef.current = [
           ...vibrationPatternSamplesRef.current,
           { timestampMs: now, value: deltaFromGravity },
         ];
-        if (now - lastVibrationPatternUpdateRef.current >= 700) {
-          lastVibrationPatternUpdateRef.current = now;
-          setVibrationPattern(analyzeVibrationPattern(vibrationPatternSamplesRef.current, now));
-        }
       });
 
       await sleep(durationMs);
@@ -540,8 +787,6 @@ export default function StressDiagnosisScreen() {
       if (nativeSnapshot) {
         estimatedDb = mapRmsDbToApproxDisplayDb(nativeSnapshot.rmsDb);
         setAmbientNoiseDb(String(estimatedDb));
-        setAudioSnapshot(nativeSnapshot);
-        setNoisePattern(analyzeNoisePattern(noisePatternSamplesRef.current));
       } else if (metering === null) {
       } else {
         estimatedDb = mapMeteringToDb(metering);
@@ -554,16 +799,8 @@ export default function StressDiagnosisScreen() {
 
       const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
       const level = mapVibrationRmsToLevel(rms);
-      const actualDurationMs =
-        sampleTimes.length >= 2 ? sampleTimes[sampleTimes.length - 1] - sampleTimes[0] : durationMs;
-      const actualSampleRate =
-        actualDurationMs > 0 && samples.length > 1
-          ? ((samples.length - 1) / actualDurationMs) * 1000
-          : 1000 / VIBRATION_SAMPLE_INTERVAL_MS;
 
       setVibrationLevel(level);
-      setVibrationSnapshot(analyzeVibrationSamples(samples, actualSampleRate));
-      setVibrationPattern(analyzeVibrationPattern(vibrationPatternSamplesRef.current));
       return { noise: estimatedDb, vibration: level };
     } catch {
       return { noise: null, vibration: null };
@@ -596,13 +833,9 @@ export default function StressDiagnosisScreen() {
       setIsRunningMeasurement(true);
       setAmbientNoiseDb('');
       setVibrationLevel(0);
-      setAudioSnapshot(null);
-      setVibrationSnapshot(null);
-      setNoisePattern(null);
-      setVibrationPattern(null);
+      setAiResult(null);
       noisePatternSamplesRef.current = [];
       vibrationPatternSamplesRef.current = [];
-      lastVibrationPatternUpdateRef.current = 0;
       latestAudioSnapshotRef.current = null;
       setStep('measuring');
       setRemainingSeconds(selectedOption.durationSec);
@@ -638,6 +871,15 @@ export default function StressDiagnosisScreen() {
     setStep('sunlight');
   };
 
+  const handleSelectAnimalCategory = (nextCategory: StressAnimalCategory) => {
+    const nextCategoryOption =
+      STRESS_ANIMAL_CATEGORY_OPTIONS.find((categoryOption) => categoryOption.category === nextCategory) ??
+      STRESS_ANIMAL_CATEGORY_OPTIONS[0];
+
+    setAnimalCategory(nextCategory);
+    setSpecies(nextCategoryOption.options[0].label);
+  };
+
   const handleReset = () => {
     measurementRunIdRef.current += 1;
     setStep('select');
@@ -646,13 +888,9 @@ export default function StressDiagnosisScreen() {
     setDirectSunlight(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
-    setAudioSnapshot(null);
-    setVibrationSnapshot(null);
-    setNoisePattern(null);
-    setVibrationPattern(null);
+    setAiResult(null);
     noisePatternSamplesRef.current = [];
     vibrationPatternSamplesRef.current = [];
-    lastVibrationPatternUpdateRef.current = 0;
     latestAudioSnapshotRef.current = null;
   };
 
@@ -742,34 +980,25 @@ export default function StressDiagnosisScreen() {
           <View style={styles.formLayout}>
             <Text style={styles.centerTitle}>{selectedOption.label}</Text>
             <Text style={styles.centerDescription}>
-              동물 종류와 직사광선 조건을 선택해주세요.
+              동물군과 직사광선 조건을 선택해주세요.
             </Text>
 
             <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>동물 종류</Text>
+              <Text style={styles.fieldLabel}>동물군</Text>
               <View style={styles.speciesOptionList}>
-                {SPECIES_OPTIONS.map((option) => {
-                  const active =
-                    option === '기타 포유류'
-                      ? (OTHER_MAMMAL_SUB as readonly string[]).includes(species)
-                      : species === option;
+                {STRESS_ANIMAL_CATEGORY_OPTIONS.map((option) => {
+                  const active = animalCategory === option.category;
                   return (
                     <Pressable
-                      key={option}
+                      key={option.category}
                       style={[styles.speciesOptionChip, active && styles.speciesOptionChipActive]}
-                      onPress={() => {
-                        if (option === '기타 포유류') {
-                          setSpecies('고슴도치');
-                        } else {
-                          setSpecies(option);
-                        }
-                      }}>
+                      onPress={() => handleSelectAnimalCategory(option.category)}>
                       <Text
                         style={[
                           styles.speciesOptionChipText,
                           active && styles.speciesOptionChipTextActive,
                         ]}>
-                        {option}
+                        {option.label}
                       </Text>
                     </Pressable>
                   );
@@ -777,23 +1006,23 @@ export default function StressDiagnosisScreen() {
               </View>
             </View>
 
-            {(OTHER_MAMMAL_SUB as readonly string[]).includes(species) ? (
+            {selectedAnimalCategory.options.length > 1 ? (
               <View style={styles.fieldBlock}>
-                <Text style={styles.fieldLabel}>세부 종 선택</Text>
+                <Text style={styles.fieldLabel}>세부 유형</Text>
                 <View style={styles.speciesOptionList}>
-                  {OTHER_MAMMAL_SUB.map((sub) => {
-                    const active = species === sub;
+                  {selectedAnimalCategory.options.map((option) => {
+                    const active = species === option.label;
                     return (
                       <Pressable
-                        key={sub}
+                        key={option.profileId}
                         style={[styles.speciesOptionChip, active && styles.speciesOptionChipActive]}
-                        onPress={() => setSpecies(sub)}>
+                        onPress={() => setSpecies(option.label)}>
                         <Text
                           style={[
                             styles.speciesOptionChipText,
                             active && styles.speciesOptionChipTextActive,
                           ]}>
-                          {sub}
+                          {option.label}
                         </Text>
                       </Pressable>
                     );
@@ -830,43 +1059,47 @@ export default function StressDiagnosisScreen() {
 
         {step === 'result' ? (
           <View style={styles.resultLayout}>
+            <View style={styles.resultSummaryCard}>
+              <Text style={styles.resultSummaryLabel}>사육 환경 적합도</Text>
+              <Text style={styles.resultSummaryStatus}>{getSuitabilityLabel(report.level)}</Text>
+              <Text style={styles.resultSummaryText}>{report.summary}</Text>
+            </View>
+
             <RiskGraph
-              title="소음 위험군"
-              value={noiseValue}
+              title="소음 변화"
               unit="dB"
               maxValue={100}
               cautionValue={animalGroupInfo.noiseCautionDb}
               warningValue={noiseWarningValue}
-              patternLabel={noisePattern?.label}
               chartWidth={resultChartWidth}
-              samples={noisePatternSamplesRef.current.map((sample) => ({
-                timestampMs: sample.timestampMs,
-                value: sample.approxDb,
-              }))}
-              detail={
-                audioSnapshot
-                  ? `주요 ${formatFrequencyHz(audioSnapshot.peakFrequencyHz)} · ${getDominantBandLabel(audioSnapshot)}`
-                  : report.noiseBandLabel
-              }
+              samples={noiseSamples}
+              stats={[`평균 ${noiseAverageValue} dB`, `최대 ${noiseMaxValue} dB`]}
+            />
+            <MeasurementAiBlock
+              interpretation={displayNoiseInterpretation}
+            />
+            <FrequencyAnalysisCard
+              dominantBand={frequencySummary.dominantBand}
+              highFrequencyLevel={frequencySummary.highFrequencyLevel}
+              lowFrequencyMarkerLevel={frequencySummary.lowFrequencyMarkerLevel}
+              lowBandRatio={frequencySummary.lowBandRatio}
+              midBandRatio={frequencySummary.midBandRatio}
+              highBandRatio={frequencySummary.highBandRatio}
+              summary={frequencySummary.summary}
             />
 
             <RiskGraph
-              title="진동 위험군"
-              value={vibrationMgValue}
-              unit="mg"
+              title="진동 변화"
+              unit=""
               maxValue={vibrationMaxValue}
-              cautionValue={25}
-              warningValue={50}
-              patternLabel={vibrationPattern?.label}
+              cautionValue={3}
+              warningValue={6}
               chartWidth={resultChartWidth}
-              samples={vibrationSamplesMg}
-              detail={
-                vibrationSnapshot
-                  ? `주요 ${formatFrequencyHz(vibrationSnapshot.peakFrequencyHz)} · ${getDominantVibrationBandLabel(
-                      vibrationSnapshot
-                    )}`
-                  : getVibrationBandLabel(vibrationLevel)
-              }
+              samples={vibrationSamplesLevel}
+              stats={[`평균 ${vibrationAverageState}`, `피크 ${vibrationPeakState}`]}
+            />
+            <MeasurementAiBlock
+              interpretation={displayVibrationInterpretation}
             />
 
             <View style={styles.resultActions}>
@@ -1157,16 +1390,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   resultLayout: {
-    gap: 30,
+    gap: 14,
     marginTop: 6,
     paddingVertical: 4,
   },
+  resultSummaryCard: {
+    gap: 5,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  resultSummaryLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  resultSummaryStatus: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  resultSummaryText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textMuted,
+  },
   riskGraphCard: {
-    gap: 16,
+    gap: 9,
   },
   riskGraphHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     gap: 16,
   },
   riskGraphTitle: {
@@ -1174,36 +1431,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
-  riskGraphDetail: {
-    marginTop: 5,
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textMuted,
-  },
-  riskValueWrap: {
+  riskGraphStats: {
     alignItems: 'flex-end',
+    gap: 2,
   },
-  riskValue: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  riskUnit: {
+  riskGraphStatText: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.textMuted,
   },
-  chartWithAxis: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  yAxisLabels: {
-    width: 24,
-    height: 190,
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingVertical: 2,
+  chartBlock: {
+    alignItems: 'center',
   },
   axisText: {
     fontSize: 9,
@@ -1216,6 +1454,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#DDEFE6',
     alignSelf: 'center',
+  },
+  yAxisOverlay: {
+    position: 'absolute',
+    top: 5,
+    bottom: 5,
+    left: 6,
+    justifyContent: 'space-between',
+    zIndex: 2,
+  },
+  axisOverlayText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: 'rgba(28, 28, 30, 0.5)',
   },
   xAxisLabels: {
     flexDirection: 'row',
@@ -1255,9 +1506,65 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryStrong,
     transformOrigin: '0px 0.5px',
   },
-  riskPatternText: {
+  measurementAiBlock: {
+    gap: 5,
+    paddingHorizontal: 2,
+    paddingBottom: 4,
+  },
+  measurementAiLabel: {
     fontSize: 12,
-    lineHeight: 18,
+    fontWeight: '800',
+    color: colors.primaryStrong,
+  },
+  measurementAiText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textMuted,
+  },
+  frequencyAnalysisCard: {
+    gap: 9,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  frequencyAnalysisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  frequencyAnalysisTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  frequencyBars: {
+    gap: 7,
+  },
+  frequencyBarRow: {
+    gap: 5,
+  },
+  frequencyBarLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  frequencyBarTrack: {
+    height: 8,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: colors.surfaceMuted,
+  },
+  frequencyBarFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: colors.primaryStrong,
+  },
+  frequencyAnalysisText: {
+    fontSize: 13,
+    lineHeight: 20,
     color: colors.textMuted,
   },
   resultHero: {
