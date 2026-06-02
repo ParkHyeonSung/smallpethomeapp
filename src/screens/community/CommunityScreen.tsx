@@ -433,7 +433,7 @@ export default function CommunityScreen() {
     }).start(() => setIsFeatureMenuVisible(false));
   };
 
-  const openFeatureScreen = (href: '/stress-check' | '/(tabs)/simulation') => {
+  const openFeatureScreen = (href: '/stress-check' | '/simulation') => {
     Animated.timing(featureMenuX, {
       toValue: -340,
       duration: 160,
@@ -757,7 +757,6 @@ export default function CommunityScreen() {
             <View style={styles.featureMenuHeader}>
               <View>
                 <Text style={styles.featureMenuTitle}>기능 메뉴</Text>
-                <Text style={styles.featureMenuSubtitle}>필요한 도구를 선택해 주세요.</Text>
               </View>
               <Pressable style={styles.featureMenuCloseButton} onPress={closeFeatureMenu}>
                 <Ionicons name="close" size={21} color={colors.text} />
@@ -769,19 +768,17 @@ export default function CommunityScreen() {
                 <Ionicons name="pulse-outline" size={20} color={colors.primary} />
               </View>
               <View style={styles.featureMenuTextBox}>
-                <Text style={styles.featureMenuItemTitle}>스트레스 진단</Text>
-                <Text style={styles.featureMenuItemDescription}>모바일 앱에서 소음과 진동을 측정해요.</Text>
+                <Text style={styles.featureMenuItemTitle}>입주 전 환경 체크</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
 
-            <Pressable style={styles.featureMenuItem} onPress={() => openFeatureScreen('/(tabs)/simulation')}>
+            <Pressable style={styles.featureMenuItem} onPress={() => openFeatureScreen('/simulation')}>
               <View style={styles.featureMenuIcon}>
                 <Ionicons name="cube-outline" size={20} color={colors.primary} />
               </View>
               <View style={styles.featureMenuTextBox}>
                 <Text style={styles.featureMenuItemTitle}>3D 시뮬레이션</Text>
-                <Text style={styles.featureMenuItemDescription}>케이지 크기와 배치물을 직접 조정해요.</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
@@ -1022,13 +1019,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
-  featureMenuSubtitle: {
-    marginTop: -4,
-    marginBottom: 4,
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textMuted,
-  },
   featureMenuCloseButton: {
     width: 36,
     height: 36,
@@ -1061,11 +1051,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.text,
-  },
-  featureMenuItemDescription: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
   },
   statusCard: {
     alignItems: 'center',

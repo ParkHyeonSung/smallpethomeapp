@@ -186,8 +186,8 @@ export default function ProfileScreen() {
           <Ionicons name="document-text-outline" size={20} color={colors.primaryStrong} />
         </View>
         <View style={styles.stressReportsTextWrap}>
-          <Text style={styles.stressReportsTitle}>스트레스 진단 기록</Text>
-          <Text style={styles.stressReportsSubtitle}>저장한 측정 결과와 점수를 다시 확인합니다.</Text>
+          <Text style={styles.stressReportsTitle}>입주 전 환경 체크 기록</Text>
+          <Text style={styles.stressReportsSubtitle}>저장한 체크 결과를 다시 확인합니다.</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </Pressable>

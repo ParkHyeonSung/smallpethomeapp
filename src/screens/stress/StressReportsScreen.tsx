@@ -23,17 +23,17 @@ const LEVEL_META: Record<
   { label: string; color: string; backgroundColor: string }
 > = {
   stable: {
-    label: '안정',
+    label: '적합',
     color: '#236B4D',
     backgroundColor: '#E7F6EF',
   },
   caution: {
-    label: '주의',
+    label: '주의 필요',
     color: '#9A6700',
     backgroundColor: '#FFF3D6',
   },
   warning: {
-    label: '위험',
+    label: '부적합',
     color: '#A62D2D',
     backgroundColor: '#FDECEC',
   },
@@ -55,8 +55,8 @@ export default function StressReportsScreen() {
       setReports(await getMyStressReports());
     } catch (error) {
       Alert.alert(
-        '진단 기록 불러오기 실패',
-        error instanceof Error ? error.message : '저장된 진단 기록을 불러오지 못했습니다.'
+        '기록 불러오기 실패',
+        error instanceof Error ? error.message : '저장된 기록을 불러오지 못했습니다.'
       );
     } finally {
       setIsLoading(false);
@@ -77,23 +77,23 @@ export default function StressReportsScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <View style={styles.headerText}>
-          <AppHeader title="진단 기록" />
+          <AppHeader title="기록" />
         </View>
       </View>
 
       {isLoading ? (
         <View style={styles.stateCard}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.stateText}>진단 기록을 불러오는 중입니다...</Text>
+          <Text style={styles.stateText}>기록을 불러오는 중입니다...</Text>
         </View>
       ) : null}
 
       {!isLoading && reports.length === 0 ? (
         <View style={styles.stateCard}>
           <Ionicons name="document-text-outline" size={34} color={colors.primary} />
-          <Text style={styles.stateTitle}>아직 저장된 진단 기록이 없어요.</Text>
+          <Text style={styles.stateTitle}>아직 저장된 기록이 없어요.</Text>
           <Pressable style={styles.primaryButton} onPress={() => router.push('/stress-check' as never)}>
-            <Text style={styles.primaryButtonText}>진단하러 가기</Text>
+            <Text style={styles.primaryButtonText}>체크하러 가기</Text>
           </Pressable>
         </View>
       ) : null}
@@ -135,23 +135,7 @@ function ReportCard({
       <Text style={styles.summaryText} numberOfLines={isDesktopWeb ? 3 : 4}>
         {report.summary}
       </Text>
-
-      <View style={styles.metricGrid}>
-        <Metric label="소음" value={`${report.ambient_noise_db} dB`} />
-        <Metric label="진동" value={`${report.vibration_level}/10`} />
-      </View>
     </Pressable>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metricItem}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -283,27 +267,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: colors.text,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  metricItem: {
-    width: '48.5%',
-    gap: 4,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceMuted,
-  },
-  metricLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  metricValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.primaryStrong,
   },
 });

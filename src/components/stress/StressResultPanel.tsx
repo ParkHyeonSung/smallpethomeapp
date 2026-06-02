@@ -69,13 +69,34 @@ function formatGraphTickLabel(seconds: number, durationSec: number) {
   return `${seconds}s`;
 }
 
+function getSuitabilityStatusTone(status: string) {
+  if (status.includes('부적합')) {
+    return {
+      backgroundColor: '#FCE4E4',
+      color: '#B42318',
+    };
+  }
+
+  if (status.includes('주의')) {
+    return {
+      backgroundColor: '#FFF2CC',
+      color: '#8A5A00',
+    };
+  }
+
+  return {
+    backgroundColor: '#DFF3E8',
+    color: '#1F7A4D',
+  };
+}
+
 type RiskGraphProps = {
   title: string;
   unit: string;
   maxValue: number;
   cautionValue: number;
   warningValue: number;
-  stats: string[];
+  stats: { label: string; value: string }[];
   samples: { timestampMs: number; value: number }[];
   chartWidth: number;
   durationSec: number;
@@ -135,9 +156,10 @@ function RiskGraph({
         <Text style={styles.riskGraphTitle}>{title}</Text>
         <View style={styles.riskGraphStats}>
           {stats.map((stat) => (
-            <Text key={stat} style={styles.riskGraphStatText}>
-              {stat}
-            </Text>
+            <View key={`${stat.label}-${stat.value}`} style={styles.riskGraphStatRow}>
+              <Text style={styles.riskGraphStatLabel}>{stat.label}</Text>
+              <Text style={styles.riskGraphStatValue}>{stat.value}</Text>
+            </View>
           ))}
         </View>
       </View>
@@ -196,10 +218,16 @@ function RiskGraph({
   );
 }
 
-function MeasurementAiBlock({ interpretation }: { interpretation: string }) {
+function MeasurementAiBlock({
+  label = 'AI 해석',
+  interpretation,
+}: {
+  label?: string;
+  interpretation: string;
+}) {
   return (
     <View style={styles.measurementAiBlock}>
-      <Text style={styles.measurementAiLabel}>AI 해석</Text>
+      <Text style={styles.measurementAiLabel}>{label}</Text>
       <Text style={styles.measurementAiText}>{interpretation}</Text>
     </View>
   );
@@ -213,7 +241,9 @@ function FrequencyAnalysisCard({
   lowBandRatio,
   midBandRatio,
   highBandRatio,
+  interpretation,
 }: StressResultFrequencyView) {
+  const hasFrequencyData = peakFrequencyHz > 0 && lowBandRatio + midBandRatio + highBandRatio > 0;
   const bars = [
     { label: '낮은 대역', value: lowBandRatio },
     { label: '중간 대역', value: midBandRatio },
@@ -223,50 +253,69 @@ function FrequencyAnalysisCard({
   return (
     <View style={styles.frequencyAnalysisCard}>
       <View style={styles.frequencyAnalysisHeader}>
-        <Text style={styles.frequencyAnalysisTitle}>주파수 분석</Text>
+        <Text style={styles.frequencyAnalysisTitle}>소리 대역 분석</Text>
       </View>
+      <Text style={styles.frequencyAnalysisNote}>
+        대역 분포는 소리의 성격을 보는 참고값이며, 적합 여부는 소음과 진동으로만 반영합니다.
+      </Text>
       <View style={styles.frequencyMetricGrid}>
         <View style={styles.frequencyMetricItem}>
-          <Text style={styles.frequencyMetricLabel}>주요 주파수</Text>
+          <Text style={styles.frequencyMetricLabel}>가장 큰 피크</Text>
           <Text style={styles.frequencyMetricValue}>{peakFrequencyHz > 0 ? `${Math.round(peakFrequencyHz)} Hz` : '-'}</Text>
         </View>
         <View style={styles.frequencyMetricItem}>
-          <Text style={styles.frequencyMetricLabel}>주요 대역</Text>
+          <Text style={styles.frequencyMetricLabel}>주로 감지된 대역</Text>
           <Text style={styles.frequencyMetricValue}>{dominantBand}</Text>
         </View>
         <View style={styles.frequencyMetricItem}>
           <Text style={styles.frequencyMetricLabel}>저주파 표지</Text>
-          <Text style={styles.frequencyMetricValue}>{lowFrequencyMarkerLevel}</Text>
+          <Text style={styles.frequencyMetricValue}>{hasFrequencyData ? lowFrequencyMarkerLevel : '-'}</Text>
         </View>
         <View style={styles.frequencyMetricItem}>
-          <Text style={styles.frequencyMetricLabel}>고주파</Text>
-          <Text style={styles.frequencyMetricValue}>{highFrequencyLevel}</Text>
+          <Text style={styles.frequencyMetricLabel}>높은 대역 수준</Text>
+          <Text style={styles.frequencyMetricValue}>{hasFrequencyData ? highFrequencyLevel : '-'}</Text>
         </View>
       </View>
-      <View style={styles.frequencyBars}>
-        {bars.map((bar) => (
-          <View key={bar.label} style={styles.frequencyBarRow}>
-            <View style={styles.frequencyBarLabelRow}>
-              <Text style={styles.frequencyBarLabel}>{bar.label}</Text>
-              <Text style={styles.frequencyBarValue}>{Math.round(bar.value * 100)}%</Text>
+
+      {hasFrequencyData ? (
+        <View style={styles.frequencyBars}>
+          <Text style={styles.frequencyBarsTitle}>대역 비율</Text>
+          {bars.map((bar) => (
+            <View key={bar.label} style={styles.frequencyBarRow}>
+              <View style={styles.frequencyBarLabelRow}>
+                <Text style={styles.frequencyBarLabel}>{bar.label}</Text>
+                <Text style={styles.frequencyBarValue}>{Math.round(bar.value * 100)}%</Text>
+              </View>
+              <View style={styles.frequencyBarTrack}>
+                <View
+                  style={[
+                    styles.frequencyBarFill,
+                    { width: `${Math.max(6, Math.round(bar.value * 100))}%` as DimensionValue },
+                  ]}
+                />
+              </View>
             </View>
-            <View style={styles.frequencyBarTrack}>
-              <View
-                style={[
-                  styles.frequencyBarFill,
-                  { width: `${Math.max(6, Math.round(bar.value * 100))}%` as DimensionValue },
-                ]}
-              />
-            </View>
-          </View>
-        ))}
+          ))}
+        </View>
+      ) : null}
+
+      <View style={styles.frequencyTextBlock}>
+        <Text style={styles.frequencyTextLabel}>주파수 해석</Text>
+        <Text style={styles.frequencyAnalysisText}>{interpretation}</Text>
       </View>
     </View>
   );
 }
 
+function getCompactVibrationState(state: string) {
+  if (state.includes('강한')) return '강함';
+  if (state.includes('주의')) return '주의 필요';
+  if (state.includes('약한')) return '약함';
+  if (state.includes('안정')) return '안정';
+  return state;
+}
+
 export default function StressResultPanel({
-  summaryLabel = '사육 환경 적합도',
   suitabilityStatus,
   summary,
   chartWidth,
@@ -277,11 +326,16 @@ export default function StressResultPanel({
   actions,
   showEstimateNotice,
 }: StressResultPanelProps) {
+  const suitabilityTone = getSuitabilityStatusTone(suitabilityStatus);
+
   return (
     <View style={styles.resultLayout}>
       <View style={styles.resultSummaryCard}>
-        <Text style={styles.resultSummaryLabel}>{summaryLabel}</Text>
-        <Text style={styles.resultSummaryStatus}>{suitabilityStatus}</Text>
+        <View style={[styles.resultSummaryStatusBadge, { backgroundColor: suitabilityTone.backgroundColor }]}>
+          <Text style={[styles.resultSummaryStatus, { color: suitabilityTone.color }]}>
+            {suitabilityStatus}
+          </Text>
+        </View>
         <Text style={styles.resultSummaryText}>{summary}</Text>
       </View>
 
@@ -294,11 +348,13 @@ export default function StressResultPanel({
         chartWidth={chartWidth}
         durationSec={durationSec}
         samples={noise.samples}
-        stats={[`평균 ${noise.averageDb} dB`, `최대 ${noise.maxDb} dB`]}
+        stats={[
+          { label: '평균', value: `${noise.averageDb} dB` },
+          { label: '최대', value: `${noise.maxDb} dB` },
+        ]}
       />
-      <MeasurementAiBlock interpretation={noise.interpretation} />
+      <MeasurementAiBlock label="소음 해석" interpretation={noise.interpretation} />
       <FrequencyAnalysisCard {...frequency} />
-      <MeasurementAiBlock interpretation={frequency.interpretation} />
 
       <RiskGraph
         title="진동 변화"
@@ -310,9 +366,12 @@ export default function StressResultPanel({
         durationSec={durationSec}
         startAtZero
         samples={vibration.samples}
-        stats={[`평균 ${vibration.averageState}`, `피크 ${vibration.peakState}`]}
+        stats={[
+          { label: '평균 상태', value: getCompactVibrationState(vibration.averageState) },
+          { label: '순간 피크', value: getCompactVibrationState(vibration.peakState) },
+        ]}
       />
-      <MeasurementAiBlock interpretation={vibration.interpretation} />
+      <MeasurementAiBlock label="진동 해석" interpretation={vibration.interpretation} />
 
       {actions ? <View style={styles.resultActions}>{actions}</View> : null}
       {showEstimateNotice ? (
@@ -329,22 +388,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   resultSummaryCard: {
-    gap: 5,
-    padding: 14,
+    gap: 10,
+    padding: 16,
     borderRadius: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  resultSummaryLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.textMuted,
+  resultSummaryStatusBadge: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 78,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 10,
   },
   resultSummaryStatus: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.text,
+    fontSize: 31,
+    lineHeight: 38,
+    fontWeight: '900',
   },
   resultSummaryText: {
     fontSize: 14,
@@ -367,12 +430,21 @@ const styles = StyleSheet.create({
   },
   riskGraphStats: {
     alignItems: 'flex-end',
-    gap: 2,
+    gap: 4,
   },
-  riskGraphStatText: {
+  riskGraphStatRow: {
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  riskGraphStatLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.textMuted,
+  },
+  riskGraphStatValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
   },
   chartBlock: {
     alignItems: 'center',
@@ -476,6 +548,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
+  frequencyAnalysisNote: {
+    marginTop: -3,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+  },
   frequencyMetricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -500,6 +578,11 @@ const styles = StyleSheet.create({
   },
   frequencyBars: {
     gap: 7,
+  },
+  frequencyBarsTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.text,
   },
   frequencyBarRow: {
     gap: 5,
@@ -534,6 +617,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: colors.textMuted,
+  },
+  frequencyTextBlock: {
+    gap: 4,
+  },
+  frequencyTextLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primaryStrong,
   },
   resultActions: {
     gap: 10,
