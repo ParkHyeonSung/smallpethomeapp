@@ -14,35 +14,15 @@ import {
 
 import AppHeader from '@/src/components/common/AppHeader';
 import ScreenContainer from '@/src/components/common/ScreenContainer';
-import MetricBarChart from '@/src/components/stress/MetricBarChart';
+import StressResultPanel from '@/src/components/stress/StressResultPanel';
 import { colors } from '@/src/constants/colors';
+import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
 import {
   deleteStressReport,
   getMyStressReportById,
   StressReportItem,
+  StressReportResultSnapshot,
 } from '@/src/lib/stress-reports';
-
-const LEVEL_META: Record<
-  StressReportItem['level'],
-  { label: string; color: string; backgroundColor: string }
-> = {
-  stable: {
-    label: '안정',
-    color: '#236B4D',
-    backgroundColor: '#E7F6EF',
-  },
-  caution: {
-    label: '주의',
-    color: '#9A6700',
-    backgroundColor: '#FFF3D6',
-  },
-  warning: {
-    label: '위험',
-    color: '#A62D2D',
-    backgroundColor: '#FDECEC',
-  },
-};
-
 
 export default function StressReportDetailScreen() {
   const params = useLocalSearchParams();
@@ -128,7 +108,8 @@ export default function StressReportDetailScreen() {
     );
   }
 
-  const meta = LEVEL_META[report.level];
+  const resultChartWidth = Math.max(240, Math.min(640, width - 80));
+  const snapshot = getReportResultSnapshot(report);
 
   return (
     <ScreenContainer
@@ -143,84 +124,31 @@ export default function StressReportDetailScreen() {
         </View>
       </View>
 
-      <View style={[styles.layout, isDesktopWeb && styles.layoutDesktop]}>
-        <View style={[styles.summaryCard, isDesktopWeb && styles.summaryCardDesktop]}>
-          <View style={styles.summaryHeader}>
-            <View>
-              <Text style={styles.dateText}>{formatReportDate(report.created_at)}</Text>
-              <Text style={styles.speciesText}>{report.species}</Text>
-            </View>
-            <View style={[styles.levelBadge, { backgroundColor: meta.backgroundColor }]}>
-              <Text style={[styles.levelBadgeText, { color: meta.color }]}>{meta.label}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.summaryText}>{report.summary}</Text>
-
-          <MetricBarChart
-            items={[
-              {
-                label: '소음',
-                value: report.ambient_noise_db,
-                maxValue: 100,
-                displayValue: `${report.ambient_noise_db} dB`,
-              },
-              {
-                label: '진동',
-                value: report.vibration_level,
-                maxValue: 10,
-                displayValue: `${report.vibration_level}/10`,
-              },
-            ]}
-          />
-        </View>
-
-        <View style={styles.detailColumn}>
-          <InfoList title="주요 위험 요인" icon="alert-circle-outline" items={report.highlights} />
-          <InfoList title="권장 조치" icon="checkmark-circle-outline" items={report.recommendations} />
-
-          <View style={styles.noticeCard}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.primaryStrong} />
-            <Text style={styles.noticeText}>
-              이 결과는 스마트폰 센서로 측정한 간이 데이터와 동물복지 관련 공개 문헌을 참고해
-              산출한 참고용 추정값이며, 수의학적 진단을 대체하지 않습니다. 이상 행동이나 건강
-              문제가 관찰되면 반드시 수의사와 상담하세요.
-            </Text>
-          </View>
-
-          <Pressable
-            style={[styles.deleteButton, isDeleting && styles.disabled]}
-            onPress={handleDelete}
-            disabled={isDeleting}>
-            <Text style={styles.deleteButtonText}>
-              {isDeleting ? '삭제 중...' : '진단 기록 삭제'}
-            </Text>
-          </Pressable>
-        </View>
+      <View style={styles.recordMeta}>
+        <Text style={styles.dateText}>{formatReportDate(report.created_at)}</Text>
+        <Text style={styles.speciesText}>{report.species}</Text>
       </View>
-    </ScreenContainer>
-  );
-}
 
-function InfoList({
-  title,
-  icon,
-  items,
-}: {
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  items: string[];
-}) {
-  return (
-    <View style={styles.sectionCard}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {items.map((item) => (
-        <View key={item} style={styles.infoRow}>
-          <Ionicons name={icon} size={18} color={colors.primaryStrong} />
-          <Text style={styles.infoText}>{item}</Text>
-        </View>
-      ))}
-    </View>
+      <StressResultPanel
+        suitabilityStatus={snapshot.suitabilityStatus}
+        summary={snapshot.summary}
+        chartWidth={resultChartWidth}
+        durationSec={snapshot.durationSec}
+        noise={snapshot.noise}
+        frequency={snapshot.frequency}
+        vibration={snapshot.vibration}
+        showEstimateNotice
+      />
+
+      <Pressable
+        style={[styles.deleteButton, isDeleting && styles.disabled]}
+        onPress={handleDelete}
+        disabled={isDeleting}>
+        <Text style={styles.deleteButtonText}>
+          {isDeleting ? '삭제 중...' : '진단 기록 삭제'}
+        </Text>
+      </Pressable>
+    </ScreenContainer>
   );
 }
 
@@ -235,6 +163,83 @@ function formatReportDate(value: string) {
   const minutes = String(date.getMinutes()).padStart(2, '0');
 
   return `${year}.${month}.${day} ${hours}:${minutes}`;
+}
+
+function getSuitabilityLabel(level: StressReportItem['level']) {
+  if (level === 'warning') return '부적합';
+  if (level === 'caution') return '주의 필요';
+  return '적합';
+}
+
+function getVibrationStateLabel(level: number) {
+  if (level >= 8) return '강한 흔들림';
+  if (level >= 6) return '뚜렷한 흔들림';
+  if (level >= 3) return '약한 흔들림';
+  return '안정';
+}
+
+function getReportResultSnapshot(report: StressReportItem): StressReportResultSnapshot {
+  if (report.checklist.resultSnapshot) {
+    const animalGroupInfo = resolveStressAnimalGroup(report.species);
+    const snapshot = report.checklist.resultSnapshot;
+    return {
+      ...snapshot,
+      frequency: {
+        ...snapshot.frequency,
+        peakFrequencyHz: snapshot.frequency.peakFrequencyHz ?? 0,
+        interpretation: snapshot.frequency.interpretation ?? snapshot.frequency.summary,
+      },
+      vibration: {
+        ...snapshot.vibration,
+        cautionValue: snapshot.vibration.cautionValue ?? animalGroupInfo.vibrationCautionLevel,
+        warningValue: snapshot.vibration.warningValue ?? animalGroupInfo.vibrationWarningLevel,
+      },
+    };
+  }
+
+  const animalGroupInfo = resolveStressAnimalGroup(report.species);
+  const durationSec = 60;
+  const endTimestamp = durationSec * 1000;
+  const vibrationState = getVibrationStateLabel(report.vibration_level);
+
+  return {
+    durationSec,
+    suitabilityStatus: getSuitabilityLabel(report.level),
+    summary: report.summary,
+    noise: {
+      samples: [
+        { timestampMs: 0, value: report.ambient_noise_db },
+        { timestampMs: endTimestamp, value: report.ambient_noise_db },
+      ],
+      averageDb: report.ambient_noise_db,
+      maxDb: report.ambient_noise_db,
+      cautionValue: animalGroupInfo.noiseCautionDb,
+      warningValue: animalGroupInfo.noiseWarningDb ?? Math.min(animalGroupInfo.noiseCautionDb + 10, 100),
+      interpretation: report.summary,
+    },
+    frequency: {
+      peakFrequencyHz: 0,
+      dominantBand: '분석 없음',
+      highFrequencyLevel: '낮음',
+      lowFrequencyMarkerLevel: '낮음',
+      lowBandRatio: 0,
+      midBandRatio: 0,
+      highBandRatio: 0,
+      summary: '이전 기록에는 소리 성격 분석 데이터가 저장되어 있지 않습니다.',
+      interpretation: '이전 기록에는 주파수 해석 데이터가 저장되어 있지 않습니다.',
+    },
+    vibration: {
+      samples: [
+        { timestampMs: 0, value: report.vibration_level },
+        { timestampMs: endTimestamp, value: report.vibration_level },
+      ],
+      averageState: vibrationState,
+      peakState: vibrationState,
+      cautionValue: animalGroupInfo.vibrationCautionLevel,
+      warningValue: animalGroupInfo.vibrationWarningLevel,
+      interpretation: report.summary,
+    },
+  };
 }
 
 const styles = StyleSheet.create({
@@ -269,6 +274,10 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+  },
+  recordMeta: {
+    gap: 3,
+    paddingHorizontal: 2,
   },
   layout: {
     gap: 16,
