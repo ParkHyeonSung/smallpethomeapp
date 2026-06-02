@@ -27,6 +27,9 @@ export type StressAnimalGroupInfo = StressAnimalProfileOption & {
   repeatedExposureCorrection: number;
   noiseCautionDb: number;
   noiseWarningDb: number | null;
+  vibrationCautionLevel: number;
+  vibrationWarningLevel: number;
+  frequencyGuidance: string;
   directSunlightCorrection: number;
   directSunlightNote: string;
 };
@@ -116,6 +119,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.2,
     noiseCautionDb: 80,
     noiseWarningDb: 85,
+    vibrationCautionLevel: 3,
+    vibrationWarningLevel: 6,
+    frequencyGuidance:
+      '설치류는 갑작스러운 소리 변화와 높은 대역의 반복 소리에 더 보수적으로 해석합니다.',
     directSunlightCorrection: 8,
     directSunlightNote:
       '설치류는 피할 공간 없는 직사광선 노출 시 열부하와 과도한 밝기 자극 위험이 있어 보수적으로 해석합니다.',
@@ -130,6 +137,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.15,
     noiseCautionDb: 75,
     noiseWarningDb: 85,
+    vibrationCautionLevel: 3,
+    vibrationWarningLevel: 6,
+    frequencyGuidance:
+      '기니피그는 갑작스러운 생활 소음과 중간 대역의 반복 소리를 함께 확인합니다.',
     directSunlightCorrection: 8,
     directSunlightNote:
       '기니피그는 피할 공간 없는 직사광선 노출이 열부하와 회피 스트레스로 이어질 수 있어 보수적으로 해석합니다.',
@@ -144,6 +155,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.15,
     noiseCautionDb: 80,
     noiseWarningDb: 85,
+    vibrationCautionLevel: 3,
+    vibrationWarningLevel: 6,
+    frequencyGuidance:
+      '기타 설치류는 높은 대역과 반복적인 소리 변화를 보수적으로 확인합니다.',
     directSunlightCorrection: 8,
     directSunlightNote:
       '설치류는 피할 공간 없는 직사광선 노출 시 열부하와 과도한 밝기 자극 위험이 있어 보수적으로 해석합니다.',
@@ -158,6 +173,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.1,
     noiseCautionDb: 90,
     noiseWarningDb: null,
+    vibrationCautionLevel: 2,
+    vibrationWarningLevel: 5,
+    frequencyGuidance:
+      '게코류는 공기 중 소리보다 바닥이나 선반을 타고 전달되는 낮은 대역의 울림과 진동을 더 중요하게 봅니다.',
     directSunlightCorrection: 0,
     directSunlightNote:
       '파충류는 종에 따라 빛과 열 요구가 달라 공통 벌점을 적용하지 않고, 해석 단계에서만 주의 문구로 다룹니다.',
@@ -172,6 +191,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.05,
     noiseCautionDb: 90,
     noiseWarningDb: null,
+    vibrationCautionLevel: 2,
+    vibrationWarningLevel: 5,
+    frequencyGuidance:
+      '파충류는 종별 차이가 커 소리 자체보다 낮은 대역의 울림과 반복 진동을 중심으로 조심스럽게 해석합니다.',
     directSunlightCorrection: 0,
     directSunlightNote:
       '파충류는 종에 따라 빛과 열 요구가 달라 공통 벌점을 적용하지 않고, 해석 단계에서만 주의 문구로 다룹니다.',
@@ -186,6 +209,10 @@ const PROFILE_CORRECTIONS: Record<
     repeatedExposureCorrection: 1.1,
     noiseCautionDb: 80,
     noiseWarningDb: 90,
+    vibrationCautionLevel: 3,
+    vibrationWarningLevel: 6,
+    frequencyGuidance:
+      '소형 포유류는 갑작스러운 생활 소음, 높은 대역의 날카로운 소리, 반복 진동을 함께 확인합니다.',
     directSunlightCorrection: 8,
     directSunlightNote:
       '소형 포유류는 피할 공간 없는 직사광선 노출이 열부하나 회피 스트레스로 이어질 수 있어 보수적으로 해석합니다.',
