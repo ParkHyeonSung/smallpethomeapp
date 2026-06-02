@@ -1,6 +1,39 @@
 import { StressDiagnosisInput, StressDiagnosisReport } from '@/src/lib/stress-diagnosis';
 import { supabase } from '@/src/lib/supabase';
 
+export type StressReportResultSnapshot = {
+  durationSec: number;
+  suitabilityStatus: string;
+  summary: string;
+  noise: {
+    samples: { timestampMs: number; value: number }[];
+    averageDb: number;
+    maxDb: number;
+    cautionValue: number;
+    warningValue: number;
+    interpretation: string;
+  };
+  frequency: {
+    peakFrequencyHz: number;
+    dominantBand: string;
+    highFrequencyLevel: string;
+    lowFrequencyMarkerLevel: string;
+    lowBandRatio: number;
+    midBandRatio: number;
+    highBandRatio: number;
+    summary: string;
+    interpretation: string;
+  };
+  vibration: {
+    samples: { timestampMs: number; value: number }[];
+    averageState: string;
+    peakState: string;
+    cautionValue: number;
+    warningValue: number;
+    interpretation: string;
+  };
+};
+
 export type StressReportItem = {
   id: string;
   user_id: string;
@@ -16,6 +49,7 @@ export type StressReportItem = {
     directSunlight: boolean;
     nearSpeaker: boolean;
     unstableFloor: boolean;
+    resultSnapshot?: StressReportResultSnapshot;
   };
   score: number;
   level: StressDiagnosisReport['level'];
@@ -30,6 +64,7 @@ export type StressReportItem = {
 type SaveStressReportInput = {
   diagnosisInput: StressDiagnosisInput;
   report: StressDiagnosisReport;
+  resultSnapshot?: StressReportResultSnapshot;
 };
 
 function normalizeStressReport(row: any): StressReportItem {
@@ -54,7 +89,7 @@ function normalizeStressReport(row: any): StressReportItem {
   };
 }
 
-export async function saveStressReport({ diagnosisInput, report }: SaveStressReportInput) {
+export async function saveStressReport({ diagnosisInput, report, resultSnapshot }: SaveStressReportInput) {
   const {
     data: { user },
     error: userError,
@@ -90,6 +125,7 @@ export async function saveStressReport({ diagnosisInput, report }: SaveStressRep
         directSunlight: diagnosisInput.directSunlight,
         nearSpeaker: diagnosisInput.nearSpeaker,
         unstableFloor: diagnosisInput.unstableFloor,
+        resultSnapshot,
       },
       score: report.score,
       level: report.level,
