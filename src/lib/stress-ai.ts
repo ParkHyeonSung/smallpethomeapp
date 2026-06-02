@@ -26,6 +26,10 @@ export type StressAiPreview = {
 export type StressAiMeasuredValues = {
   averageDb: number;
   maxDb: number;
+  p95Db?: number;
+  averageVibrationLevel?: number;
+  maxVibrationLevel?: number;
+  p95VibrationLevel?: number;
 };
 
 export type StressAiVibrationSummary = {
@@ -47,11 +51,25 @@ export type StressAiFrequencyAnalysis = {
   summary: string;
 };
 
+export type StressAiPatternSummary = {
+  average?: number;
+  max?: number;
+  p95?: number;
+  peakGap?: number;
+  spikeCount: number;
+  spikeDurationSec: number;
+  longestSpikeSec: number;
+  activeRatio: number;
+  pattern: string;
+  userMeaning: string;
+};
+
 export type StressAiResult = {
   suitabilityStatus: string;
   noiseStatus: string;
   vibrationStatus: string;
   noiseInterpretation: string;
+  frequencyInterpretation?: string;
   vibrationInterpretation: string;
   why: string;
   improvements: string;
@@ -72,13 +90,19 @@ export type StressAiPayload = {
     ambientNoiseDb: number;
     averageDb?: number;
     maxDb?: number;
+    p95Db?: number;
     noiseBand: string;
     vibrationLevel: number;
+    averageVibrationLevel?: number;
+    maxVibrationLevel?: number;
+    p95VibrationLevel?: number;
     vibrationBand: string;
     directSunlight: boolean;
   };
   vibrationSummary?: StressAiVibrationSummary;
   frequencyAnalysis?: StressAiFrequencyAnalysis;
+  noisePatternSummary?: StressAiPatternSummary;
+  vibrationPatternSummary?: StressAiPatternSummary;
   patternAnalysis?: {
     noisePattern: string;
     noiseDetail: string;
@@ -94,6 +118,11 @@ export type StressAiPayload = {
   interpretationRules: {
     priorityFactors: ('noise' | 'vibration' | 'direct_sunlight')[];
     groupGuidance: string;
+    noiseCautionDb: number;
+    noiseWarningDb: number | null;
+    vibrationCautionLevel: number;
+    vibrationWarningLevel: number;
+    frequencyGuidance: string;
     doNotChangeVerdict: true;
   };
   uiContext: {
@@ -133,6 +162,8 @@ export function buildStressAiPayload(
     measuredValues?: StressAiMeasuredValues;
     vibrationSummary?: StressAiVibrationSummary;
     frequencyAnalysis?: StressAiFrequencyAnalysis;
+    noisePatternSummary?: StressAiPatternSummary;
+    vibrationPatternSummary?: StressAiPatternSummary;
     patternAnalysis?: StressAiPayload['patternAnalysis'];
   }
 ): StressAiPayload {
@@ -155,13 +186,19 @@ export function buildStressAiPayload(
       ambientNoiseDb: input.ambientNoiseDb,
       averageDb: options?.measuredValues?.averageDb,
       maxDb: options?.measuredValues?.maxDb,
+      p95Db: options?.measuredValues?.p95Db,
       noiseBand: report.noiseBandLabel,
       vibrationLevel: input.vibrationLevel,
+      averageVibrationLevel: options?.measuredValues?.averageVibrationLevel,
+      maxVibrationLevel: options?.measuredValues?.maxVibrationLevel,
+      p95VibrationLevel: options?.measuredValues?.p95VibrationLevel,
       vibrationBand: getVibrationBandLabel(input.vibrationLevel),
       directSunlight: input.directSunlight,
     },
     vibrationSummary: options?.vibrationSummary,
     frequencyAnalysis: options?.frequencyAnalysis,
+    noisePatternSummary: options?.noisePatternSummary,
+    vibrationPatternSummary: options?.vibrationPatternSummary,
     diagnosis: {
       score: report.score,
       level: report.level,
@@ -171,6 +208,11 @@ export function buildStressAiPayload(
     interpretationRules: {
       priorityFactors: getPriorityFactors(groupInfo),
       groupGuidance: groupInfo.guidance,
+      noiseCautionDb: groupInfo.noiseCautionDb,
+      noiseWarningDb: groupInfo.noiseWarningDb,
+      vibrationCautionLevel: groupInfo.vibrationCautionLevel,
+      vibrationWarningLevel: groupInfo.vibrationWarningLevel,
+      frequencyGuidance: groupInfo.frequencyGuidance,
       doNotChangeVerdict: true,
     },
     uiContext: {
@@ -205,7 +247,18 @@ export async function generateStressAiResult(payload: StressAiPayload): Promise<
   });
 
   if (error) {
-    throw new Error(error.message);
+    let detail = '';
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const responseText = await context.clone().text();
+        if (responseText) {
+          detail = ` ${responseText}`;
+        }
+      } catch {}
+    }
+
+    throw new Error(`${error.message}${detail}`);
   }
 
   if (!data) {
