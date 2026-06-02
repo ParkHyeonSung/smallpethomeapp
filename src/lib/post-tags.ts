@@ -9,6 +9,7 @@ export type PostProductTag = {
   thumbnail_url: string | null;
   x_position: number;
   y_position: number;
+  image_sort_order: number;
   created_at: string;
 };
 
@@ -18,6 +19,7 @@ export type PostProductTagInput = {
   thumbnailUrl?: string | null;
   xPosition: number;
   yPosition: number;
+  imageSortOrder?: number;
 };
 
 export function isValidProductUrl(value: string) {
@@ -38,6 +40,33 @@ export function isValidProductUrl(value: string) {
   }
 }
 
+function isMissingImageSortOrderColumnError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+
+  const values = Object.values(error as Record<string, unknown>)
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+
+  return values.includes('image_sort_order') || values.includes('schema cache');
+}
+
+export async function ensurePostTagImageSortOrderReady() {
+  const { error } = await supabase.from('post_product_tags').select('image_sort_order').limit(1);
+
+  if (!error) {
+    return;
+  }
+
+  if (isMissingImageSortOrderColumnError(error)) {
+    throw new Error(
+      '사진별 제품 태그 저장을 위해 Supabase에 011_add_image_sort_order_to_post_product_tags.sql을 먼저 적용해주세요.'
+    );
+  }
+
+  throw error;
+}
+
 function normalizeTag(row: any): PostProductTag {
   return {
     id: row.id,
@@ -48,6 +77,7 @@ function normalizeTag(row: any): PostProductTag {
     thumbnail_url: row.thumbnail_url ?? null,
     x_position: Number(row.x_position),
     y_position: Number(row.y_position),
+    image_sort_order: row.image_sort_order ?? 0,
     created_at: row.created_at,
   };
 }
@@ -97,11 +127,17 @@ export async function createPostTags(postId: string, tags: PostProductTagInput[]
     thumbnail_url: tag.thumbnailUrl?.trim() || null,
     x_position: tag.xPosition,
     y_position: tag.yPosition,
+    image_sort_order: tag.imageSortOrder ?? 0,
   }));
 
   const { data, error } = await supabase.from('post_product_tags').insert(payload).select('*');
 
   if (error) {
+    if (isMissingImageSortOrderColumnError(error)) {
+      throw new Error(
+        '사진별 제품 태그 저장을 위해 Supabase에 011_add_image_sort_order_to_post_product_tags.sql을 먼저 적용해주세요.'
+      );
+    }
     throw error;
   }
 

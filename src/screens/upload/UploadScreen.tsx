@@ -23,7 +23,14 @@ import ScreenContainer from '@/src/components/common/ScreenContainer';
 import { colors } from '@/src/constants/colors';
 import { createPostImages, getPostImagesByPostId, replacePostImages } from '@/src/lib/post-images';
 import { createPost, getPostById, updatePost } from '@/src/lib/posts';
-import { createPostTags, getPostTagsByPostId, isValidProductUrl, PostProductTagInput, replacePostTags } from '@/src/lib/post-tags';
+import {
+  createPostTags,
+  ensurePostTagImageSortOrderReady,
+  getPostTagsByPostId,
+  isValidProductUrl,
+  PostProductTagInput,
+  replacePostTags,
+} from '@/src/lib/post-tags';
 import { uploadPostImages } from '@/src/lib/storage';
 
 type DraftTag = PostProductTagInput & { id: string };
@@ -58,6 +65,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
 
   const activeImage = selectedImages[activeImageIndex] ?? null;
+  const activeImageTags = draftTags.filter((tag) => (tag.imageSortOrder ?? 0) === activeImageIndex);
 
   const imageAspectRatio = useMemo(() => {
     if (!activeImage?.width || !activeImage?.height) return 4 / 5;
@@ -94,6 +102,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
             thumbnailUrl: tag.thumbnail_url,
             xPosition: tag.x_position,
             yPosition: tag.y_position,
+            imageSortOrder: tag.image_sort_order,
           }))
         );
         setActiveImageIndex(0);
@@ -196,6 +205,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
         productUrl: tagUrl.trim(),
         xPosition: pendingPosition.x,
         yPosition: pendingPosition.y,
+        imageSortOrder: activeImageIndex,
       },
     ]);
     setTagName('');
@@ -215,11 +225,17 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
         return nextImages;
       }
 
-      if (targetIndex === 0) {
-        setDraftTags([]);
-        setPendingPosition(null);
-        setIsTagPlacementMode(false);
-      }
+      setDraftTags((prevTags) =>
+        prevTags
+          .filter((tag) => (tag.imageSortOrder ?? 0) !== targetIndex)
+          .map((tag) => ({
+            ...tag,
+            imageSortOrder:
+              (tag.imageSortOrder ?? 0) > targetIndex ? (tag.imageSortOrder ?? 0) - 1 : tag.imageSortOrder,
+          }))
+      );
+      setPendingPosition(null);
+      setIsTagPlacementMode(false);
 
       setActiveImageIndex((currentIndex) => {
         if (currentIndex > targetIndex) return currentIndex - 1;
@@ -254,8 +270,13 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
         productUrl: tag.productUrl,
         xPosition: tag.xPosition,
         yPosition: tag.yPosition,
+        imageSortOrder: tag.imageSortOrder ?? 0,
         thumbnailUrl: null,
       }));
+
+      if (tagPayload.length > 0) {
+        await ensurePostTagImageSortOrderReady();
+      }
 
       if (isEditMode && editPostId) {
         const post = await updatePost({
@@ -331,7 +352,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
           {selectedImages.length > 0 ? (
             <>
               <Text style={styles.helperText}>
-                현재는 첫 번째 이미지를 대표 이미지로 사용하고, 제품 태그도 대표 이미지 기준으로 저장됩니다.
+                첫 번째 이미지는 대표 이미지로 사용됩니다. 사진을 선택한 뒤 제품 위치를 찍어 태그를 추가할 수 있습니다.
               </Text>
 
               <ScrollView
@@ -366,40 +387,34 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
                 ))}
               </ScrollView>
 
-              {activeImageIndex === 0 ? (
-                <>
-                  <Text style={styles.helperText}>
-                    {pendingPosition
-                      ? '위치가 선택됐습니다. 아래에서 제품 정보를 입력해주세요.'
-                      : isTagPlacementMode
-                        ? '대표 이미지를 클릭해서 제품 위치를 선택하세요.'
-                        : '대표 이미지에 태그를 추가하려면 위치 선택 버튼을 눌러주세요.'}
-                  </Text>
-
-                  <View style={styles.rowWrap}>
-                    <Pressable
-                      style={[styles.secondaryButton, isTagPlacementMode && styles.activeButton]}
-                      onPress={() => setIsTagPlacementMode((prev) => !prev)}>
-                      <Text
-                        style={[
-                          styles.secondaryButtonText,
-                          isTagPlacementMode && styles.activeButtonText,
-                        ]}>
-                        {isTagPlacementMode ? '위치 선택 중' : '태그 위치 찍기'}
-                      </Text>
-                    </Pressable>
-                    {pendingPosition ? (
-                      <Pressable style={styles.ghostButton} onPress={() => setPendingPosition(null)}>
-                        <Text style={styles.ghostButtonText}>위치 다시 고르기</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </>
-              ) : (
+              <>
                 <Text style={styles.helperText}>
-                  태그는 현재 대표 이미지(첫 번째 이미지)에만 추가할 수 있습니다.
+                  {pendingPosition
+                    ? `${activeImageIndex + 1}번째 사진의 위치가 선택됐습니다. 아래에서 제품 정보를 입력해주세요.`
+                    : isTagPlacementMode
+                      ? `${activeImageIndex + 1}번째 사진에서 제품 위치를 선택하세요.`
+                      : `${activeImageIndex + 1}번째 사진에 태그를 추가하려면 위치 선택 버튼을 눌러주세요.`}
                 </Text>
-              )}
+
+                <View style={styles.rowWrap}>
+                  <Pressable
+                    style={[styles.secondaryButton, isTagPlacementMode && styles.activeButton]}
+                    onPress={() => setIsTagPlacementMode((prev) => !prev)}>
+                    <Text
+                      style={[
+                        styles.secondaryButtonText,
+                        isTagPlacementMode && styles.activeButtonText,
+                      ]}>
+                      {isTagPlacementMode ? '위치 선택 중' : '태그 위치 찍기'}
+                    </Text>
+                  </Pressable>
+                  {pendingPosition ? (
+                    <Pressable style={styles.ghostButton} onPress={() => setPendingPosition(null)}>
+                      <Text style={styles.ghostButtonText}>위치 다시 고르기</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </>
 
               <View
                 style={[
@@ -408,12 +423,11 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
                   { aspectRatio: imageAspectRatio || 4 / 5 },
                 ]}
                 onLayout={handlePreviewLayout}
-                onStartShouldSetResponder={() => isTagPlacementMode && activeImageIndex === 0}
+                onStartShouldSetResponder={() => isTagPlacementMode}
                 onResponderRelease={handleSelectTagPosition}>
                 <Image source={{ uri: activeImage?.uri }} style={styles.previewImage} contentFit="contain" />
 
-                {activeImageIndex === 0 &&
-                  draftTags.map((tag) => (
+                {activeImageTags.map((tag) => (
                     <View
                       key={tag.id}
                       style={[
@@ -423,7 +437,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
                     />
                   ))}
 
-                {activeImageIndex === 0 && pendingPosition ? (
+                {pendingPosition ? (
                   <View
                     style={[
                       styles.pendingMarker,
@@ -432,7 +446,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
                   />
                 ) : null}
 
-                {activeImageIndex === 0 && isTagPlacementMode ? (
+                {isTagPlacementMode ? (
                   <View style={styles.overlayHint}>
                     <Ionicons name="add-circle" size={22} color="#FFFFFF" />
                     <Text style={styles.overlayHintText}>클릭해서 태그 위치 선택</Text>
@@ -454,6 +468,11 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
         <View style={[styles.formColumn, isDesktopWeb && styles.formColumnDesktop]}>
           <View style={styles.formCard}>
             <Text style={styles.sectionTitle}>제품 태그</Text>
+            {selectedImages.length > 0 ? (
+              <Text style={styles.helperText}>
+                현재 선택된 {activeImageIndex + 1}번째 사진에 태그가 추가됩니다.
+              </Text>
+            ) : null}
             <TextInput
               value={tagName}
               onChangeText={setTagName}
@@ -481,6 +500,7 @@ export default function UploadScreen({ editPostId }: UploadScreenProps) {
                   <View key={tag.id} style={styles.tagItem}>
                     <View style={styles.tagTextWrap}>
                       <Text style={styles.tagTitle}>
+                        {tag.imageSortOrder !== undefined ? `${tag.imageSortOrder + 1}번 사진 · ` : ''}
                         태그 {index + 1}. {tag.productName}
                       </Text>
                       <Text style={styles.tagSubtitle} numberOfLines={1}>

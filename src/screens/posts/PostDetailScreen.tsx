@@ -82,6 +82,10 @@ export default function PostDetailScreen() {
     () => tags.find((tag) => tag.id === activeTagId) ?? null,
     [activeTagId, tags]
   );
+  const activeImageTags = useMemo(
+    () => tags.filter((tag) => tag.image_sort_order === activeImageIndex),
+    [activeImageIndex, tags]
+  );
   const isOwnPost = !!post && currentUserId === post.author_id;
   const displayImages = useMemo(() => {
     if (postImages.length > 0) {
@@ -104,7 +108,7 @@ export default function PostDetailScreen() {
     ];
   }, [post, postImages]);
 
-  const shouldShowTags = !!post?.image_url && activeImageIndex === 0;
+  const shouldShowTags = displayImages.length > 0 && activeImageTags.length > 0;
 
   useEffect(() => {
     if (!postId) {
@@ -479,7 +483,7 @@ export default function PostDetailScreen() {
                 ) : null}
 
                 {shouldShowTags
-                  ? tags.map((tag) => (
+                  ? activeImageTags.map((tag) => (
                       <Pressable
                         key={tag.id}
                         style={[

@@ -484,9 +484,10 @@ export default function CommunityScreen() {
         const displayImages = getDisplayImages(post, postImagesByPostId);
         const activeImageIndex = activeImageIndexByPostId[post.id] ?? 0;
         const postTags = postTagsByPostId[post.id] ?? [];
-        const shouldShowTags = postTags.length > 0 && activeImageIndex === 0;
+        const activeImageTags = postTags.filter((tag) => tag.image_sort_order === activeImageIndex);
+        const shouldShowTags = activeImageTags.length > 0;
         const activeTag =
-          postTags.find((tag) => tag.id === activeTagIdByPostId[post.id]) ?? null;
+          activeImageTags.find((tag) => tag.id === activeTagIdByPostId[post.id]) ?? null;
 
         return (
           <View
@@ -593,7 +594,7 @@ export default function CommunityScreen() {
                   ) : null}
 
                   {shouldShowTags
-                    ? postTags.map((tag) => (
+                    ? activeImageTags.map((tag) => (
                         <Pressable
                           key={tag.id}
                           style={[
