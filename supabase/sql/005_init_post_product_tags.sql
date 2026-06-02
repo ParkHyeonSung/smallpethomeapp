@@ -7,11 +7,14 @@ create table if not exists public.post_product_tags (
   thumbnail_url text,
   x_position numeric(6,5) not null check (x_position >= 0 and x_position <= 1),
   y_position numeric(6,5) not null check (y_position >= 0 and y_position <= 1),
+  image_sort_order integer not null default 0 check (image_sort_order >= 0),
   created_at timestamptz not null default timezone('utc', now())
 );
 
 create index if not exists post_product_tags_post_id_idx on public.post_product_tags (post_id);
 create index if not exists post_product_tags_author_id_idx on public.post_product_tags (author_id);
+create index if not exists post_product_tags_post_id_image_sort_order_idx
+on public.post_product_tags (post_id, image_sort_order asc);
 
 alter table public.post_product_tags enable row level security;
 
