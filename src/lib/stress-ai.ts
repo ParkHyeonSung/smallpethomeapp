@@ -123,10 +123,15 @@ export type StressAiPayload = {
     vibrationCautionLevel: number;
     vibrationWarningLevel: number;
     frequencyGuidance: string;
+    screeningGuidance: {
+      noiseFocus: string;
+      vibrationFocus: string;
+      frequencyFocus: string;
+    };
     doNotChangeVerdict: true;
   };
   uiContext: {
-    screenName: '입주 전 환경 적합성 진단';
+    screenName: '입주 전 환경 체크';
     tone: 'short_clear_supportive';
     language: 'ko-KR';
   };
@@ -138,12 +143,11 @@ function getDiagnosisLabel(level: StressDiagnosisLevel) {
   return '적합';
 }
 
-function getVibrationBandLabel(level: number) {
-  if (level >= 8) return '매우 높음';
-  if (level >= 6) return '높음';
-  if (level >= 4) return '보통';
-  if (level >= 2) return '낮음';
-  return '매우 낮음';
+function getVibrationBandLabel(level: number, groupInfo: StressAnimalGroupInfo) {
+  if (level >= groupInfo.vibrationWarningLevel) return '강한 흔들림';
+  if (level >= groupInfo.vibrationCautionLevel) return '주의가 필요한 흔들림';
+  if (level >= Math.max(1, groupInfo.vibrationCautionLevel / 2)) return '약한 흔들림';
+  return '안정';
 }
 
 function getPriorityFactors(groupInfo: StressAnimalGroupInfo): ('noise' | 'vibration' | 'direct_sunlight')[] {
@@ -192,7 +196,7 @@ export function buildStressAiPayload(
       averageVibrationLevel: options?.measuredValues?.averageVibrationLevel,
       maxVibrationLevel: options?.measuredValues?.maxVibrationLevel,
       p95VibrationLevel: options?.measuredValues?.p95VibrationLevel,
-      vibrationBand: getVibrationBandLabel(input.vibrationLevel),
+      vibrationBand: getVibrationBandLabel(input.vibrationLevel, groupInfo),
       directSunlight: input.directSunlight,
     },
     vibrationSummary: options?.vibrationSummary,
@@ -213,10 +217,11 @@ export function buildStressAiPayload(
       vibrationCautionLevel: groupInfo.vibrationCautionLevel,
       vibrationWarningLevel: groupInfo.vibrationWarningLevel,
       frequencyGuidance: groupInfo.frequencyGuidance,
+      screeningGuidance: groupInfo.screeningGuidance,
       doNotChangeVerdict: true,
     },
     uiContext: {
-      screenName: '입주 전 환경 적합성 진단',
+      screenName: '입주 전 환경 체크',
       tone: 'short_clear_supportive',
       language: 'ko-KR',
     },
@@ -225,11 +230,12 @@ export function buildStressAiPayload(
 
 export function buildStressAiPromptBundle(payload: StressAiPayload): StressAiPromptBundle {
   const system = [
-    '당신은 소동물 입주 전 환경 적합성 진단 결과를 설명하는 도우미입니다.',
+    '당신은 소동물 입주 전 환경 체크 결과를 설명하는 도우미입니다.',
     '앱이 이미 계산한 score, level, label을 절대 수정하지 마세요.',
     '당신의 역할은 판정을 다시 계산하는 것이 아니라 결과를 짧고 명확한 한국어로 설명하는 것입니다.',
     '동물군별 해석 규칙을 반드시 따르고, 주요 원인 1~2개와 개선 팁 1~2개만 간결하게 제시하세요.',
     '출력은 3문단 이내로 작성하고, 과장하거나 임상 진단처럼 말하지 마세요.',
+    '센서 한계, 스마트폰 측정, 참고용 안내는 화면 하단 고정 문구에서 처리하므로 해석 문장에는 쓰지 마세요.',
     '현재 측정 결과라면 필요 시 피크 시간 재측정을 한 문장으로 권하세요.',
   ].join(' ');
 

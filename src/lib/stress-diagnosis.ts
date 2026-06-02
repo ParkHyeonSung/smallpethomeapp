@@ -1,4 +1,7 @@
-import { resolveStressAnimalGroup } from '@/src/lib/stress-animal-groups';
+import {
+  resolveStressAnimalGroup,
+  StressAnimalGroupInfo,
+} from '@/src/lib/stress-animal-groups';
 
 export type TrafficLevel = 'low' | 'medium' | 'high';
 
@@ -92,8 +95,12 @@ function getMeasurementModeLabel(mode: StressMeasurementMode) {
   return mode === 'peak' ? '피크 시간 측정' : '현재 환경 측정';
 }
 
-function getNoiseBand(noiseDb: number): NoiseBand {
-  if (noiseDb >= 90) {
+function getNoiseBand(noiseDb: number, animalGroup: StressAnimalGroupInfo): NoiseBand {
+  const warningThreshold = animalGroup.noiseWarningDb;
+  const veryHighThreshold = warningThreshold !== null ? warningThreshold + 5 : null;
+  const watchThreshold = Math.max(0, animalGroup.noiseCautionDb - 15);
+
+  if (veryHighThreshold !== null && noiseDb >= veryHighThreshold) {
     return {
       label: '매우 높음',
       penalty: 36,
@@ -108,7 +115,7 @@ function getNoiseBand(noiseDb: number): NoiseBand {
     };
   }
 
-  if (noiseDb >= 85) {
+  if (warningThreshold !== null && noiseDb >= warningThreshold) {
     return {
       label: '높음',
       penalty: 28,
@@ -123,7 +130,7 @@ function getNoiseBand(noiseDb: number): NoiseBand {
     };
   }
 
-  if (noiseDb >= 80) {
+  if (noiseDb >= animalGroup.noiseCautionDb) {
     return {
       label: '주의 필요',
       penalty: 20,
@@ -137,7 +144,7 @@ function getNoiseBand(noiseDb: number): NoiseBand {
     };
   }
 
-  if (noiseDb >= 65) {
+  if (noiseDb >= watchThreshold) {
     return {
       label: '관찰 필요',
       penalty: 10,
@@ -170,12 +177,13 @@ function buildSignals(input: StressDiagnosisInput) {
   const strengths: string[] = [];
   const recommendations: string[] = [];
   const animalGroup = resolveStressAnimalGroup(input.species);
+  const vibrationLevel = clamp(input.vibrationLevel, 0, 10);
 
-  const noiseBand = getNoiseBand(clamp(input.ambientNoiseDb, 0, 140));
+  const noiseBand = getNoiseBand(clamp(input.ambientNoiseDb, 0, 140), animalGroup);
   signals.push(noiseBand.signal);
   recommendations.push(noiseBand.recommendation);
 
-  if (input.vibrationLevel >= 7) {
+  if (vibrationLevel >= animalGroup.vibrationWarningLevel) {
     signals.push({
       code: 'vibration_high',
       severity: 'warning',
@@ -183,7 +191,7 @@ function buildSignals(input: StressDiagnosisInput) {
       detail: '바닥 충격이나 주변 기기 진동이 지속적으로 전달될 가능성이 있습니다.',
     });
     recommendations.push('책상, 선반, 흔들리는 바닥처럼 진동이 전달되는 위치인지 다시 확인해 주세요.');
-  } else if (input.vibrationLevel >= 4) {
+  } else if (vibrationLevel >= animalGroup.vibrationCautionLevel) {
     signals.push({
       code: 'vibration_medium',
       severity: 'caution',
@@ -199,6 +207,12 @@ function buildSignals(input: StressDiagnosisInput) {
       title: '진동은 안정적임',
       detail: '현재 측정 기준으로는 큰 흔들림이 감지되지 않았습니다.',
     });
+  }
+
+  if (vibrationLevel >= 10) {
+    recommendations.push(
+      '진동이 10/10으로 측정되었습니다. 측정 중 휴대폰을 손으로 들거나 흔들었다면, 바닥에 내려놓고 다시 측정해 주세요.'
+    );
   }
 
   if (input.directSunlight) {
@@ -246,10 +260,10 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
     roundedScore = Math.max(roundedScore, 28);
   }
 
-  if (vibrationLevel >= 10) {
-    roundedScore = Math.max(roundedScore, 70);
-  } else if (vibrationLevel >= 8) {
+  if (vibrationLevel >= animalGroup.vibrationWarningLevel) {
     roundedScore = Math.max(roundedScore, 55);
+  } else if (vibrationLevel >= animalGroup.vibrationCautionLevel) {
+    roundedScore = Math.max(roundedScore, 28);
   }
 
   let level: StressDiagnosisLevel = 'stable';
@@ -272,18 +286,18 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
         : '현재 환경은 바로 부적합하다고 보긴 어렵지만, 보완하면 더 안정적인 배치가 가능합니다.';
   }
 
-  if (vibrationLevel >= 8) {
+  if (vibrationLevel >= animalGroup.vibrationWarningLevel) {
     level = 'warning';
     summary =
       measurementMode === 'peak'
         ? '피크 시간 기준으로 강한 진동이 감지되어 현재 위치는 입주 전 재검토가 필요합니다.'
         : '현재 측정에서 강한 진동이 감지되어 위치 조정이나 재측정 확인이 필요합니다.';
-
-    if (vibrationLevel >= 10) {
-      recommendations.push(
-        '진동이 10/10으로 측정되었습니다. 측정 중 휴대폰을 손으로 들거나 흔들었다면, 바닥에 내려놓고 다시 측정해 주세요.'
-      );
-    }
+  } else if (vibrationLevel >= animalGroup.vibrationCautionLevel && level === 'stable') {
+    level = 'caution';
+    summary =
+      measurementMode === 'peak'
+        ? '피크 시간 기준으로 해당 동물군에 주의가 필요한 진동이 감지되었습니다.'
+        : '현재 측정에서 해당 동물군에 주의가 필요한 진동이 감지되었습니다.';
   } else if (animalGroup.noiseWarningDb !== null && ambientNoiseDb >= animalGroup.noiseWarningDb) {
     level = 'warning';
     summary =

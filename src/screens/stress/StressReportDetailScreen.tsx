@@ -46,8 +46,8 @@ export default function StressReportDetailScreen() {
         setReport(await getMyStressReportById(reportId));
       } catch (error) {
         Alert.alert(
-          '진단 기록 불러오기 실패',
-          error instanceof Error ? error.message : '진단 기록을 불러오지 못했습니다.'
+          '기록 불러오기 실패',
+          error instanceof Error ? error.message : '기록을 불러오지 못했습니다.'
         );
       } finally {
         setIsLoading(false);
@@ -68,7 +68,7 @@ export default function StressReportDetailScreen() {
       } catch (error) {
         Alert.alert(
           '삭제 실패',
-          error instanceof Error ? error.message : '진단 기록을 삭제하지 못했습니다.'
+          error instanceof Error ? error.message : '기록을 삭제하지 못했습니다.'
         );
       } finally {
         setIsDeleting(false);
@@ -77,12 +77,12 @@ export default function StressReportDetailScreen() {
 
     if (Platform.OS === 'web') {
       const confirmed =
-        typeof window !== 'undefined' ? window.confirm('이 진단 기록을 삭제할까요?') : false;
+        typeof window !== 'undefined' ? window.confirm('이 기록을 삭제할까요?') : false;
       if (confirmed) void runDelete();
       return;
     }
 
-    Alert.alert('진단 기록 삭제', '이 진단 기록을 삭제할까요?', [
+    Alert.alert('기록 삭제', '이 기록을 삭제할까요?', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: () => void runDelete() },
     ]);
@@ -92,7 +92,7 @@ export default function StressReportDetailScreen() {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.stateText}>진단 기록을 불러오는 중입니다...</Text>
+        <Text style={styles.stateText}>기록을 불러오는 중입니다...</Text>
       </ScreenContainer>
     );
   }
@@ -100,7 +100,7 @@ export default function StressReportDetailScreen() {
   if (!report) {
     return (
       <ScreenContainer contentStyle={styles.centerContent}>
-        <Text style={styles.stateTitle}>진단 기록을 찾을 수 없습니다.</Text>
+        <Text style={styles.stateTitle}>기록을 찾을 수 없습니다.</Text>
         <Pressable style={styles.primaryButton} onPress={() => router.replace('/stress-reports')}>
           <Text style={styles.primaryButtonText}>목록으로 돌아가기</Text>
         </Pressable>
@@ -120,7 +120,7 @@ export default function StressReportDetailScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <View style={styles.headerText}>
-          <AppHeader title="진단 상세" />
+          <AppHeader title="입주 전 환경 체크 기록" />
         </View>
       </View>
 
@@ -145,7 +145,7 @@ export default function StressReportDetailScreen() {
         onPress={handleDelete}
         disabled={isDeleting}>
         <Text style={styles.deleteButtonText}>
-          {isDeleting ? '삭제 중...' : '진단 기록 삭제'}
+          {isDeleting ? '삭제 중...' : '기록 삭제'}
         </Text>
       </Pressable>
     </ScreenContainer>
@@ -171,17 +171,34 @@ function getSuitabilityLabel(level: StressReportItem['level']) {
   return '적합';
 }
 
-function getVibrationStateLabel(level: number) {
-  if (level >= 8) return '강한 흔들림';
-  if (level >= 6) return '뚜렷한 흔들림';
-  if (level >= 3) return '약한 흔들림';
+function getVibrationStateLabel(level: number, cautionLevel: number, warningLevel: number) {
+  if (level >= warningLevel) return '강한 흔들림';
+  if (level >= cautionLevel) return '주의가 필요한 흔들림';
+  if (level >= Math.max(1, cautionLevel / 2)) return '약한 흔들림';
   return '안정';
+}
+
+function getAverageValue(values: number[], fallback: number) {
+  const finiteValues = values.filter(Number.isFinite);
+  if (!finiteValues.length) return fallback;
+
+  return finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
+}
+
+function getMaxValue(values: number[], fallback: number) {
+  const finiteValues = values.filter(Number.isFinite);
+  if (!finiteValues.length) return fallback;
+
+  return Math.max(...finiteValues);
 }
 
 function getReportResultSnapshot(report: StressReportItem): StressReportResultSnapshot {
   if (report.checklist.resultSnapshot) {
     const animalGroupInfo = resolveStressAnimalGroup(report.species);
     const snapshot = report.checklist.resultSnapshot;
+    const vibrationValues = snapshot.vibration.samples.map((sample) => sample.value);
+    const vibrationAverageLevel = Math.round(getAverageValue(vibrationValues, report.vibration_level));
+    const vibrationPeakLevel = Math.round(getMaxValue(vibrationValues, report.vibration_level));
     return {
       ...snapshot,
       frequency: {
@@ -191,6 +208,16 @@ function getReportResultSnapshot(report: StressReportItem): StressReportResultSn
       },
       vibration: {
         ...snapshot.vibration,
+        averageState: getVibrationStateLabel(
+          vibrationAverageLevel,
+          animalGroupInfo.vibrationCautionLevel,
+          animalGroupInfo.vibrationWarningLevel
+        ),
+        peakState: getVibrationStateLabel(
+          vibrationPeakLevel,
+          animalGroupInfo.vibrationCautionLevel,
+          animalGroupInfo.vibrationWarningLevel
+        ),
         cautionValue: snapshot.vibration.cautionValue ?? animalGroupInfo.vibrationCautionLevel,
         warningValue: snapshot.vibration.warningValue ?? animalGroupInfo.vibrationWarningLevel,
       },
@@ -200,7 +227,11 @@ function getReportResultSnapshot(report: StressReportItem): StressReportResultSn
   const animalGroupInfo = resolveStressAnimalGroup(report.species);
   const durationSec = 60;
   const endTimestamp = durationSec * 1000;
-  const vibrationState = getVibrationStateLabel(report.vibration_level);
+  const vibrationState = getVibrationStateLabel(
+    report.vibration_level,
+    animalGroupInfo.vibrationCautionLevel,
+    animalGroupInfo.vibrationWarningLevel
+  );
 
   return {
     durationSec,
@@ -279,25 +310,6 @@ const styles = StyleSheet.create({
     gap: 3,
     paddingHorizontal: 2,
   },
-  layout: {
-    gap: 16,
-  },
-  layoutDesktop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  summaryCard: {
-    gap: 16,
-    paddingVertical: 4,
-  },
-  summaryCardDesktop: {
-    flex: 0.9,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
   dateText: {
     fontSize: 12,
     fontWeight: '700',
@@ -308,89 +320,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: colors.text,
-  },
-  levelBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  levelBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  summaryText: {
-    fontSize: 15,
-    lineHeight: 23,
-    color: colors.text,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  metricItem: {
-    width: '48.5%',
-    gap: 4,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceMuted,
-  },
-  metricLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  metricValue: {
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: '700',
-    color: colors.primaryStrong,
-  },
-  detailColumn: {
-    flex: 1.2,
-    gap: 14,
-  },
-  sectionCard: {
-    gap: 12,
-    paddingTop: 18,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 21,
-    color: colors.textMuted,
-  },
-  noticeCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingTop: 18,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  noticeText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textMuted,
-  },
-  disclaimer: {
-    fontSize: 11,
-    lineHeight: 17,
-    color: colors.textMuted,
   },
   deleteButton: {
     alignItems: 'center',

@@ -68,6 +68,7 @@ const AI_INTERPRETATION_FAILED_TEXT = 'AI 해석을 생성하지 못했습니다
 
 type MeasurementType = keyof typeof MEASUREMENT_OPTIONS;
 type Step = 'select' | 'sunlight' | 'measuring' | 'checking' | 'result';
+type DebugResultLevel = 'stable' | 'caution' | 'warning';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -193,10 +194,10 @@ function getSuitabilityLabel(level: string) {
   return '적합';
 }
 
-function getVibrationStateLabel(level: number) {
-  if (level >= 8) return '강한 흔들림';
-  if (level >= 6) return '뚜렷한 흔들림';
-  if (level >= 3) return '약한 흔들림';
+function getVibrationStateLabel(level: number, cautionLevel: number, warningLevel: number) {
+  if (level >= warningLevel) return '강한 흔들림';
+  if (level >= cautionLevel) return '주의가 필요한 흔들림';
+  if (level >= Math.max(1, cautionLevel / 2)) return '약한 흔들림';
   return '안정';
 }
 
@@ -221,7 +222,7 @@ function getNoiseFrequencySummary(samples: NoisePatternSample[]) {
       lowBandRatio: 0,
       midBandRatio: 0,
       highBandRatio: 0,
-      summary: '주파수 분석을 위한 소음 샘플이 아직 충분하지 않습니다.',
+      summary: '주파수 대역 분석은 Android 네이티브 소음 분석이 가능할 때 표시됩니다.',
     };
   }
 
@@ -243,7 +244,7 @@ function getNoiseFrequencySummary(samples: NoisePatternSample[]) {
         : '중주파';
   const highFrequencyLevel = highBand >= 0.55 ? '높음' : highBand >= 0.3 ? '보통' : '낮음';
   const lowFrequencyMarkerLevel = lowMarker >= 0.55 ? '높음' : lowMarker >= 0.3 ? '보통' : '낮음';
-  const maxBand = Math.max(lowBand, midBand, highBand, 0.01);
+  const totalBand = Math.max(lowBand + midBand + highBand, 0.01);
 
   const summary =
     dominantBand === '저주파'
@@ -257,11 +258,40 @@ function getNoiseFrequencySummary(samples: NoisePatternSample[]) {
     dominantBand,
     highFrequencyLevel,
     lowFrequencyMarkerLevel,
-    lowBandRatio: clamp(lowBand / maxBand, 0, 1),
-    midBandRatio: clamp(midBand / maxBand, 0, 1),
-    highBandRatio: clamp(highBand / maxBand, 0, 1),
+    lowBandRatio: clamp(lowBand / totalBand, 0, 1),
+    midBandRatio: clamp(midBand / totalBand, 0, 1),
+    highBandRatio: clamp(highBand / totalBand, 0, 1),
     summary,
   };
+}
+
+function buildDebugNoiseSamples(targetDb: number, durationSec: number): NoisePatternSample[] {
+  return Array.from({ length: 30 }, (_, index) => {
+    const progress = index / 29;
+    const wave = Math.sin(progress * Math.PI * 4) * 3;
+    return {
+      timestampMs: Math.round(progress * durationSec * 1000),
+      approxDb: Math.round(targetDb + wave),
+      peakFrequencyHz: 125,
+      lowBandLevel: 0.32,
+      midBandLevel: 0.48,
+      highBandLevel: 0.2,
+      marker32HzLevel: 0.18,
+      marker125HzLevel: 0.32,
+    };
+  });
+}
+
+function buildDebugVibrationSamples(targetLevel: number, durationSec: number): VibrationPatternSample[] {
+  return Array.from({ length: 30 }, (_, index) => {
+    const progress = index / 29;
+    const pulse = index % 9 === 0 ? 1 : 0;
+    const level = clamp(targetLevel + pulse, 0, 10);
+    return {
+      timestampMs: Math.round(progress * durationSec * 1000),
+      value: level / 42,
+    };
+  });
 }
 
 type BooleanFieldProps = {
@@ -336,6 +366,7 @@ export default function StressDiagnosisScreen() {
   const [aiResult, setAiResult] = useState<StressAiResult | null>(null);
   const [isAiInterpretationFailed, setIsAiInterpretationFailed] = useState(false);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
+  const [isDebugResult, setIsDebugResult] = useState(false);
 
   const selectedOption = MEASUREMENT_OPTIONS[measurementType];
   const selectedAnimalCategory = useMemo(
@@ -391,14 +422,22 @@ export default function StressDiagnosisScreen() {
   );
   const vibrationPatternBase = getGraphPatternSummary(vibrationSamplesLevel, {
     durationSec: selectedOption.durationSec,
-    threshold: 3,
+    threshold: animalGroupInfo.vibrationCautionLevel,
     average: vibrationAverageLevel,
     max: vibrationPeakLevel,
     p95: vibrationP95Level,
     unitLabel: '진동',
   });
-  const vibrationAverageState = getVibrationStateLabel(vibrationAverageLevel);
-  const vibrationPeakState = getVibrationStateLabel(vibrationPeakLevel);
+  const vibrationAverageState = getVibrationStateLabel(
+    vibrationAverageLevel,
+    animalGroupInfo.vibrationCautionLevel,
+    animalGroupInfo.vibrationWarningLevel
+  );
+  const vibrationPeakState = getVibrationStateLabel(
+    vibrationPeakLevel,
+    animalGroupInfo.vibrationCautionLevel,
+    animalGroupInfo.vibrationWarningLevel
+  );
   const vibrationSummary = useMemo(
     () => getVibrationSummary(vibrationAverageState, vibrationPeakState, vibrationPatternBase.pattern),
     [vibrationAverageState, vibrationPeakState, vibrationPatternBase.pattern]
@@ -477,6 +516,19 @@ export default function StressDiagnosisScreen() {
     }
 
     latestMeteringRef.current = recorderState.metering;
+    noisePatternSamplesRef.current = [
+      ...noisePatternSamplesRef.current,
+      {
+        timestampMs: Date.now(),
+        approxDb: mapMeteringToDb(recorderState.metering),
+        peakFrequencyHz: 0,
+        lowBandLevel: 0,
+        midBandLevel: 0,
+        highBandLevel: 0,
+        marker32HzLevel: 0,
+        marker125HzLevel: 0,
+      },
+    ];
   }, [isMeasuringNoise, recorderState.metering]);
 
   useEffect(() => {
@@ -528,7 +580,7 @@ export default function StressDiagnosisScreen() {
     });
     const vibrationPatternBase = getGraphPatternSummary(currentVibrationSamplesLevel, {
       durationSec: selectedOption.durationSec,
-      threshold: 3,
+      threshold: animalGroupInfo.vibrationCautionLevel,
       unitLabel: '진동',
     });
     const vibrationPatternSummary = {
@@ -599,6 +651,7 @@ export default function StressDiagnosisScreen() {
     diagnosisInput,
     animalGroupInfo.noiseCautionDb,
     animalGroupInfo.frequencyGuidance,
+    animalGroupInfo.vibrationCautionLevel,
     frequencySummary.dominantBand,
     frequencySummary.highBandRatio,
     frequencySummary.highFrequencyLevel,
@@ -767,7 +820,7 @@ export default function StressDiagnosisScreen() {
 
   const startMeasurementFlow = async () => {
     if (isWeb) {
-      Alert.alert('모바일 전용 기능', '스트레스 진단은 휴대폰 앱에서만 사용할 수 있습니다.');
+      Alert.alert('모바일 전용 기능', '입주 전 환경 체크는 휴대폰 앱에서만 사용할 수 있습니다.');
       return;
     }
 
@@ -781,6 +834,7 @@ export default function StressDiagnosisScreen() {
       setAiResult(null);
       setIsAiInterpretationFailed(false);
       setAiErrorMessage(null);
+      setIsDebugResult(false);
       noisePatternSamplesRef.current = [];
       vibrationPatternSamplesRef.current = [];
       latestAudioSnapshotRef.current = null;
@@ -840,15 +894,75 @@ export default function StressDiagnosisScreen() {
     setAiResult(null);
     setIsAiInterpretationFailed(false);
     setAiErrorMessage(null);
+    setIsDebugResult(false);
     noisePatternSamplesRef.current = [];
     vibrationPatternSamplesRef.current = [];
     latestAudioSnapshotRef.current = null;
     measurementEndAtRef.current = null;
   };
 
+  const handleApplyDebugResult = (level: DebugResultLevel) => {
+    const durationSec = MEASUREMENT_OPTIONS.quick.durationSec;
+    const warningNoiseDb = animalGroupInfo.noiseWarningDb ?? animalGroupInfo.noiseCautionDb + 12;
+    const targetNoiseDb =
+      level === 'warning'
+        ? warningNoiseDb
+        : level === 'caution'
+          ? animalGroupInfo.noiseCautionDb
+          : Math.max(35, animalGroupInfo.noiseCautionDb - 18);
+    const targetVibrationLevel =
+      level === 'warning'
+        ? animalGroupInfo.vibrationWarningLevel
+        : level === 'caution'
+          ? animalGroupInfo.vibrationCautionLevel
+          : Math.max(0, animalGroupInfo.vibrationCautionLevel - 2);
+    const label = level === 'warning' ? '부적합' : level === 'caution' ? '주의 필요' : '적합';
+
+    measurementRunIdRef.current += 1;
+    setMeasurementType('quick');
+    setAmbientNoiseDb(String(Math.round(targetNoiseDb)));
+    setVibrationLevel(targetVibrationLevel);
+    setDirectSunlight(false);
+    setIsRunningMeasurement(false);
+    setRemainingSeconds(0);
+    setIsDebugResult(true);
+    setIsAiInterpretationFailed(false);
+    setAiErrorMessage(null);
+    setAiResult({
+      suitabilityStatus: label,
+      noiseStatus: level === 'stable' ? '안정' : level === 'caution' ? '주의 필요' : '높음',
+      vibrationStatus: level === 'stable' ? '안정' : level === 'caution' ? '주의가 필요한 흔들림' : '강한 흔들림',
+      noiseInterpretation:
+        level === 'stable'
+          ? '테스트 값 기준으로 소음 변화가 크게 두드러지지 않습니다.'
+          : level === 'caution'
+            ? '테스트 값 기준으로 해당 동물군에 주의가 필요한 소음 구간을 확인하는 화면입니다.'
+            : '테스트 값 기준으로 높은 소음 자극이 감지되는 화면입니다.',
+      frequencyInterpretation: '테스트 샘플로 만든 주파수 대역 표시입니다.',
+      vibrationInterpretation:
+        level === 'stable'
+          ? '테스트 값 기준으로 진동은 안정적인 상태에 가깝습니다.'
+          : level === 'caution'
+            ? '테스트 값 기준으로 주의가 필요한 흔들림 상태를 확인하는 화면입니다.'
+            : '테스트 값 기준으로 강한 흔들림 상태를 확인하는 화면입니다.',
+      why: '개발 중 UI 확인을 위한 테스트 결과입니다.',
+      improvements: '실제 판정 확인은 기기 측정으로 다시 진행해 주세요.',
+    });
+    noisePatternSamplesRef.current = buildDebugNoiseSamples(targetNoiseDb, durationSec);
+    vibrationPatternSamplesRef.current = buildDebugVibrationSamples(targetVibrationLevel, durationSec);
+    latestAudioSnapshotRef.current = null;
+    measurementEndAtRef.current = null;
+    setStep('result');
+  };
+
   const handleSaveReport = async () => {
+    if (isDebugResult) {
+      Alert.alert('테스트 결과', '개발 테스트 결과는 저장하지 않습니다.');
+      return;
+    }
+
     if (isWeb) {
-      Alert.alert('모바일 전용 기능', '스트레스 진단 결과 저장은 휴대폰 앱에서만 사용할 수 있습니다.');
+      Alert.alert('모바일 전용 기능', '입주 전 환경 체크 결과 저장은 휴대폰 앱에서만 사용할 수 있습니다.');
       return;
     }
 
@@ -859,11 +973,11 @@ export default function StressDiagnosisScreen() {
         report,
         resultSnapshot,
       });
-      Alert.alert('저장 완료', '진단 결과가 저장되었어요.');
+      Alert.alert('저장 완료', '체크 결과가 저장되었어요.');
     } catch (error) {
       Alert.alert(
         '저장 실패',
-        error instanceof Error ? error.message : '진단 결과를 저장하지 못했어요.'
+        error instanceof Error ? error.message : '체크 결과를 저장하지 못했어요.'
       );
     } finally {
       setIsSavingReport(false);
@@ -882,7 +996,7 @@ export default function StressDiagnosisScreen() {
             <Ionicons name="phone-portrait-outline" size={34} color={colors.primaryStrong} />
             <Text style={styles.mobileOnlyTitle}>모바일 앱에서만 사용할 수 있어요</Text>
             <Text style={styles.mobileOnlyText}>
-              스트레스 진단은 휴대폰의 마이크와 가속도 센서를 사용하므로 PC 웹에서는 실행할 수
+              입주 전 환경 체크는 휴대폰의 마이크와 가속도 센서를 사용하므로 PC 웹에서는 실행할 수
               없어요.
             </Text>
           </View>
@@ -926,6 +1040,23 @@ export default function StressDiagnosisScreen() {
                 );
               })}
             </View>
+
+            {__DEV__ ? (
+              <View style={styles.debugCard}>
+                <Text style={styles.debugTitle}>결과 화면 테스트</Text>
+                <View style={styles.debugButtonRow}>
+                  <Pressable style={styles.debugButton} onPress={() => handleApplyDebugResult('stable')}>
+                    <Text style={styles.debugButtonText}>적합</Text>
+                  </Pressable>
+                  <Pressable style={styles.debugButton} onPress={() => handleApplyDebugResult('caution')}>
+                    <Text style={styles.debugButtonText}>주의 필요</Text>
+                  </Pressable>
+                  <Pressable style={styles.debugButton} onPress={() => handleApplyDebugResult('warning')}>
+                    <Text style={styles.debugButtonText}>부적합</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -1036,12 +1167,16 @@ export default function StressDiagnosisScreen() {
                 <Pressable style={styles.secondaryButton} onPress={handleReset}>
                   <Text style={styles.secondaryButtonText}>다시 측정</Text>
                 </Pressable>
-                <Pressable
-                  style={[styles.primaryButton, isSavingReport && styles.buttonDisabled]}
-                  onPress={() => void handleSaveReport()}
-                  disabled={isSavingReport}>
-                  <Text style={styles.primaryButtonText}>{isSavingReport ? '저장 중...' : '결과 저장'}</Text>
-                </Pressable>
+                {isDebugResult ? (
+                  <Text style={styles.debugResultNotice}>개발 테스트 결과는 저장되지 않습니다.</Text>
+                ) : (
+                  <Pressable
+                    style={[styles.primaryButton, isSavingReport && styles.buttonDisabled]}
+                    onPress={() => void handleSaveReport()}
+                    disabled={isSavingReport}>
+                    <Text style={styles.primaryButtonText}>{isSavingReport ? '저장 중...' : '결과 저장'}</Text>
+                  </Pressable>
+                )}
               </>
             }
           />
@@ -1179,6 +1314,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: colors.textMuted,
+  },
+  debugCard: {
+    gap: 10,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  debugTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  debugButtonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  debugButton: {
+    minHeight: 38,
+    paddingHorizontal: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  debugButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.primaryStrong,
+  },
+  debugResultNotice: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
   fieldBlock: {
     gap: 8,
