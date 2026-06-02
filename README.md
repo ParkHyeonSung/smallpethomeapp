@@ -1,50 +1,49 @@
-# Welcome to your Expo app 👋
+# KEKKU 소동물 사육 환경 공유 앱
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+소동물용 나만의 집 정보 공유 SNS 졸업 작품 프로젝트입니다. 커뮤니티, 이미지 기반 제품 태그, 3D 케이지 배치 시뮬레이션, 입주 전 환경 적합성 진단을 중심으로 구현하고 있습니다.
 
-## Get started
+## 기술 스택
 
-1. Install dependencies
+- Expo, React Native, TypeScript, Expo Router
+- Supabase Auth, Postgres, Storage, Edge Functions
+- React Three Fiber, Three.js, expo-gl
+- expo-audio, expo-sensors, Android AudioRecord 네이티브 분석 모듈
+- Gemini API 기반 환경 진단 결과 해석
 
-   ```bash
-   npm install
-   ```
+## 현재 중점 작업
 
-2. Start the app
+### 입주 전 환경 적합성 진단
 
-   ```bash
-   npx expo start
-   ```
+- 휴대폰 마이크와 가속도 센서로 케이지가 놓일 위치의 소음, 진동, 주파수 성격을 측정합니다.
+- 빠른 측정은 1분, 정밀 측정은 10분 기준입니다.
+- 앱 내부 판정은 소음, 진동, 직사광선 조건과 동물군별 기준을 기반으로 계산합니다.
+- AI는 앱 판정을 바꾸지 않고, 평균/최대/반복/피크/주파수 대역 데이터를 받아 사용자가 이해하기 쉬운 문장으로 해석합니다.
+- 결과 화면과 진단 기록 상세 화면은 같은 결과 패널을 사용해 그래프, 주파수 분석, AI 해석을 일관되게 보여줍니다.
 
-In the output, you'll find options to open the app in a
+### 동물군별 기준
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- 동물군 기준은 `src/lib/stress-animal-groups.ts`에서 관리합니다.
+- 새 생물이 추가되면 소음 기준, 진동 기준, 주파수 해석 가이드를 함께 추가해 종별 해석이 달라지도록 구성했습니다.
+- 현재 구분은 설치류, 파충류, 소형 포유류 중심입니다.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### AI 해석
 
-## Get a fresh project
+- Supabase Edge Function `generate-stress-ai`에서 Gemini API를 호출합니다.
+- 반환 필드는 `noiseInterpretation`, `frequencyInterpretation`, `vibrationInterpretation`, `why`, `improvements`입니다.
+- `p95`, `spikeCount`, `peakGap` 같은 내부 분석 용어는 사용자에게 직접 노출하지 않고 쉬운 표현으로 풀어 쓰도록 프롬프트를 구성했습니다.
 
-When you're ready, run:
+## 개발 실행
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## 검증
 
-## Learn more
+```bash
+npx tsc --noEmit
+npm run lint
+```
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Android 네이티브 모듈을 수정한 경우에는 Expo Go가 아니라 개발 빌드 재설치가 필요합니다.
