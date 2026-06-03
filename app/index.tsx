@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { getSessionOrClearInvalidToken } from '@/src/lib/auth-session';
 import { supabase } from '@/src/lib/supabase';
 
 export default function IndexPage() {
@@ -13,9 +14,7 @@ export default function IndexPage() {
     let isMounted = true;
 
     const loadSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const session = await getSessionOrClearInvalidToken();
 
       if (!isMounted) {
         return;

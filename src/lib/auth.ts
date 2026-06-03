@@ -1,5 +1,6 @@
 import { AuthError, Session, User } from '@supabase/supabase-js';
 
+import { getSessionOrClearInvalidToken } from '@/src/lib/auth-session';
 import { supabase } from '@/src/lib/supabase';
 
 const LOGIN_ID_DOMAIN = 'smallpethome.app';
@@ -45,9 +46,7 @@ export function validateNickname(nickname: string) {
 }
 
 async function clearExistingSession() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const session = await getSessionOrClearInvalidToken();
 
   if (!session) {
     return;

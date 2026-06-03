@@ -5,6 +5,7 @@ import { Redirect, Tabs } from 'expo-router';
 import { DeviceEventEmitter, StyleSheet } from 'react-native';
 
 import { colors } from '@/src/constants/colors';
+import { getSessionOrClearInvalidToken } from '@/src/lib/auth-session';
 import { supabase } from '@/src/lib/supabase';
 
 export default function TabLayout() {
@@ -15,9 +16,7 @@ export default function TabLayout() {
     let isMounted = true;
 
     const loadSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const session = await getSessionOrClearInvalidToken();
 
       if (!isMounted) {
         return;

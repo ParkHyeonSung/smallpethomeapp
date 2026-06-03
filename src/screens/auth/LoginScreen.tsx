@@ -14,6 +14,7 @@ import {
   signInWithLoginId,
   signUpWithLoginId,
 } from '@/src/lib/auth';
+import { getSessionOrClearInvalidToken } from '@/src/lib/auth-session';
 import { upsertMyProfile, upsertProfileForCredentials } from '@/src/lib/profiles';
 import { supabase } from '@/src/lib/supabase';
 
@@ -40,9 +41,7 @@ export default function LoginScreen() {
     let isMounted = true;
 
     const syncSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const session = await getSessionOrClearInvalidToken();
 
       if (session && isMounted) {
         await upsertMyProfile();
