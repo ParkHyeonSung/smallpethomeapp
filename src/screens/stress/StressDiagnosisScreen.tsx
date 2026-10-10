@@ -782,11 +782,17 @@ export default function StressDiagnosisScreen() {
 
       const metering = latestMeteringRef.current;
       let estimatedDb: number | null = null;
-      if (nativeSnapshot) {
+      // 판정에는 측정 종료 시점의 순간값 대신 측정 구간 전체 소음 샘플의 평균을 사용한다.
+      const measuredNoiseValues = noisePatternSamplesRef.current
+        .map((sample) => sample.approxDb)
+        .filter(Number.isFinite);
+      if (measuredNoiseValues.length > 0) {
+        estimatedDb = Math.round(getAverageValue(measuredNoiseValues, 0));
+        setAmbientNoiseDb(String(estimatedDb));
+      } else if (nativeSnapshot) {
         estimatedDb = mapRmsDbToApproxDisplayDb(nativeSnapshot.rmsDb);
         setAmbientNoiseDb(String(estimatedDb));
-      } else if (metering === null) {
-      } else {
+      } else if (metering !== null) {
         estimatedDb = mapMeteringToDb(metering);
         setAmbientNoiseDb(String(estimatedDb));
       }
