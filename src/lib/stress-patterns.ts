@@ -76,9 +76,10 @@ function hasRegularIntervals(timestamps: number[]) {
 
 export function analyzeNoisePattern(
   samples: NoisePatternSample[],
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  windowMs = WINDOW_MS
 ): StressPatternAnalysis {
-  const recent = getRecent(samples, nowMs);
+  const recent = getRecent(samples, nowMs, windowMs);
 
   if (recent.length < 8) {
     return {
