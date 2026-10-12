@@ -25,6 +25,7 @@ import {
   stopAndroidAudioAnalyzer,
 } from '@/src/lib/android-audio-analyzer';
 import {
+  analyzeNoisePattern,
   NoisePatternSample,
   VibrationPatternSample,
 } from '@/src/lib/stress-patterns';
@@ -607,7 +608,7 @@ export default function StressDiagnosisScreen() {
       timestampMs: sample.timestampMs,
       value: mapVibrationRmsToLevel(sample.value),
     }));
-    const noisePatternSummary = getGraphPatternSummary(currentNoiseSamples, {
+    const noiseGraphSummary = getGraphPatternSummary(currentNoiseSamples, {
       durationSec: selectedOption.durationSec,
       threshold: Math.max(animalGroupInfo.noiseCautionDb, noiseAverageValue + 10),
       average: noiseAverageValue,
@@ -615,6 +616,22 @@ export default function StressDiagnosisScreen() {
       p95: getPercentileValue(currentNoiseSamples.map((sample) => sample.value), 0.95, noiseAverageValue),
       unitLabel: '소음',
     });
+    // 소음 패턴은 FFT 대역 정보까지 쓰는 규칙 기반 분류(stress-patterns.ts)로 판단한다.
+    // 측정 전체 구간을 대상으로 분류하도록 창 길이를 측정 시간으로 둔다.
+    const lastNoiseSample = noisePatternSamplesRef.current[noisePatternSamplesRef.current.length - 1];
+    const noisePatternAnalysis = analyzeNoisePattern(
+      noisePatternSamplesRef.current,
+      lastNoiseSample?.timestampMs ?? Date.now(),
+      selectedOption.durationSec * 1000
+    );
+    const noisePatternSummary =
+      noisePatternAnalysis.kind === 'insufficient'
+        ? noiseGraphSummary
+        : {
+            ...noiseGraphSummary,
+            pattern: noisePatternAnalysis.label,
+            userMeaning: noisePatternAnalysis.detail,
+          };
     const vibrationPatternBase = getGraphPatternSummary(currentVibrationSamplesLevel, {
       durationSec: selectedOption.durationSec,
       threshold: animalGroupInfo.vibrationCautionLevel,
