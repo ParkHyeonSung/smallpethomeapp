@@ -109,6 +109,44 @@ function mapVibrationLevelToRms(level: number) {
 
 type AccelerationSample = { x: number; y: number; z: number };
 
+const PEAK_WINDOW_MS = 1000;
+
+// 1초 창을 샘플마다 밀면서 창 안의 값을 combine으로 합친 값 가운데 최댓값을 구한다.
+// 평균에 묻히는 짧고 큰 소음·진동(ISO 2631-1의 MTVV와 같은 생각)을 잡기 위해 쓴다.
+function getMaxWindowValue(
+  samples: { timestampMs: number; value: number }[],
+  combine: (values: number[]) => number
+) {
+  const sorted = samples
+    .filter((sample) => Number.isFinite(sample.value))
+    .sort((a, b) => a.timestampMs - b.timestampMs);
+  if (!sorted.length) return null;
+  let maxValue = -Infinity;
+  let start = 0;
+  for (let end = 0; end < sorted.length; end += 1) {
+    while (sorted[end].timestampMs - sorted[start].timestampMs > PEAK_WINDOW_MS) start += 1;
+    const value = combine(sorted.slice(start, end + 1).map((sample) => sample.value));
+    if (value > maxValue) maxValue = value;
+  }
+  return Number.isFinite(maxValue) ? maxValue : null;
+}
+
+// 소음: 1초 동안의 에너지 평균(Leq)의 최댓값 [dB]
+function getPeakOneSecondNoiseDb(samples: NoisePatternSample[]) {
+  return getMaxWindowValue(
+    samples.map((sample) => ({ timestampMs: sample.timestampMs, value: sample.approxDb })),
+    (values) => 10 * Math.log10(values.reduce((sum, db) => sum + 10 ** (db / 10), 0) / values.length)
+  );
+}
+
+// 진동: 1초 동안의 RMS(m/s²)의 최댓값을 진동 단계로 바꾼 값
+function getPeakOneSecondVibrationLevel(samples: VibrationPatternSample[]) {
+  const peakRms = getMaxWindowValue(samples, (values) =>
+    Math.sqrt(values.reduce((sum, rms) => sum + rms * rms, 0) / values.length)
+  );
+  return peakRms === null ? null : mapVibrationRmsToLevel(peakRms);
+}
+
 // 구간 안에서 축별 평균을 빼 중력·기울기 성분을 없앤 뒤, 남은 진동 성분의 평균 제곱(m/s²)²을 구한다.
 function getBlockMeanSquareMs2(block: AccelerationSample[]) {
   if (!block.length) return null;
@@ -395,6 +433,8 @@ export default function StressDiagnosisScreen() {
   const [species, setSpecies] = useState<string>('마우스·랫');
   const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
   const [vibrationLevel, setVibrationLevel] = useState(0);
+  const [peakNoiseDb, setPeakNoiseDb] = useState<number | null>(null);
+  const [peakVibrationLevel, setPeakVibrationLevel] = useState<number | null>(null);
   const [directSunlight, setDirectSunlight] = useState(false);
 
   const [isMeasuringNoise, setIsMeasuringNoise] = useState(false);
@@ -422,6 +462,8 @@ export default function StressDiagnosisScreen() {
       cageDepthCm: null,
       ambientNoiseDb: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
       vibrationLevel,
+      peakNoiseDb,
+      peakVibrationLevel,
       trafficLevel: 'low',
       hideoutReady: true,
       ventilationReady: true,
@@ -430,7 +472,7 @@ export default function StressDiagnosisScreen() {
       unstableFloor: false,
       measurementMode: measurementType === 'precise' ? 'peak' : 'current',
     }),
-    [ambientNoiseDb, directSunlight, measurementType, species, vibrationLevel]
+    [ambientNoiseDb, directSunlight, measurementType, peakNoiseDb, peakVibrationLevel, species, vibrationLevel]
   );
 
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
@@ -865,6 +907,10 @@ export default function StressDiagnosisScreen() {
         setAmbientNoiseDb(String(estimatedDb));
       }
 
+      const peakNoise = getPeakOneSecondNoiseDb(noisePatternSamplesRef.current);
+      setPeakNoiseDb(peakNoise === null ? null : Math.round(peakNoise));
+      setPeakVibrationLevel(getPeakOneSecondVibrationLevel(vibrationPatternSamplesRef.current));
+
       if (!blockMeanSquares.length) {
         return { noise: estimatedDb, vibration: null };
       }
@@ -908,6 +954,8 @@ export default function StressDiagnosisScreen() {
       setIsRunningMeasurement(true);
       setAmbientNoiseDb('');
       setVibrationLevel(0);
+      setPeakNoiseDb(null);
+      setPeakVibrationLevel(null);
       setAiResult(null);
       setIsAiInterpretationFailed(false);
       setAiErrorMessage(null);
@@ -965,6 +1013,8 @@ export default function StressDiagnosisScreen() {
     setStep('select');
     setAmbientNoiseDb('');
     setVibrationLevel(0);
+    setPeakNoiseDb(null);
+    setPeakVibrationLevel(null);
     setDirectSunlight(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
@@ -999,6 +1049,8 @@ export default function StressDiagnosisScreen() {
     setMeasurementType('quick');
     setAmbientNoiseDb(String(Math.round(targetNoiseDb)));
     setVibrationLevel(targetVibrationLevel);
+    setPeakNoiseDb(null);
+    setPeakVibrationLevel(null);
     setDirectSunlight(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
