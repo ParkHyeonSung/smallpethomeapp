@@ -56,6 +56,16 @@ type StressAnimalProfileDefinition = {
  * 새 대분류가 필요하면 STRESS_ANIMAL_CATEGORY_DEFINITIONS에 먼저 추가한 뒤
  * category에 그 값을 사용하면 선택 UI와 판정/AI 페이로드에 함께 반영됩니다.
  */
+/*
+ * 판정 기준값 설정 규칙
+ * - 종별 허용 소음·진동 수치를 제시한 문헌이 없어, 문헌 수치를 경고 기준으로 삼고 주의 기준은 일정한 여유를 둔다.
+ * - 소음 경고 85dB: NRC 실험동물 관리 지침(8판, 49~50쪽)의 '85dB보다 큰 소리는 청각·비청각 영향' 기준.
+ *   소음 주의는 경고 기준 - 5dB(80dB).
+ * - 진동 경고 7단계(약 0.3 m/s²): 마우스·랫에 0.3 m/s²로 진동을 가했을 때 31~60Hz에서 진동이 줄지 않은 연구(Rabey et al., 2015).
+ *   진동 주의는 경고 기준 - 2단계(5단계, 약 0.1 m/s²).
+ * - 파충류는 공기 중 소음 기준 문헌이 없어 소음 주의 90dB만 두고 경고는 두지 않는다.
+ * - 동물별 민감도 차이는 기준값이 아니라 noiseCorrection·vibrationCorrection 보정값으로만 반영한다.
+ */
 export const STRESS_ANIMAL_PROFILES = [
   {
     category: 'rodent',
@@ -79,8 +89,8 @@ export const STRESS_ANIMAL_PROFILES = [
     repeatedExposureCorrection: 1.2,
     noiseCautionDb: 80,
     noiseWarningDb: 85,
-    vibrationCautionLevel: 3,
-    vibrationWarningLevel: 6,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '설치류는 갑작스러운 소리 변화와 높은 대역의 반복 소리에 더 보수적으로 해석합니다.',
     directSunlightCorrection: 8,
@@ -107,10 +117,10 @@ export const STRESS_ANIMAL_PROFILES = [
     highFrequencyCorrection: 1,
     suddenNoiseCorrection: 1.25,
     repeatedExposureCorrection: 1.15,
-    noiseCautionDb: 75,
+    noiseCautionDb: 80,
     noiseWarningDb: 85,
-    vibrationCautionLevel: 3,
-    vibrationWarningLevel: 6,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '기니피그는 갑작스러운 생활 소음과 중간 대역의 반복 소리를 함께 확인합니다.',
     directSunlightCorrection: 8,
@@ -139,8 +149,8 @@ export const STRESS_ANIMAL_PROFILES = [
     repeatedExposureCorrection: 1.15,
     noiseCautionDb: 80,
     noiseWarningDb: 85,
-    vibrationCautionLevel: 3,
-    vibrationWarningLevel: 6,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '기타 설치류는 높은 대역과 반복적인 소리 변화를 보수적으로 확인합니다.',
     directSunlightCorrection: 8,
@@ -169,8 +179,8 @@ export const STRESS_ANIMAL_PROFILES = [
     repeatedExposureCorrection: 1.1,
     noiseCautionDb: 90,
     noiseWarningDb: null,
-    vibrationCautionLevel: 2,
-    vibrationWarningLevel: 5,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '게코류는 공기 중 소리보다 바닥이나 선반을 타고 전달되는 낮은 대역의 울림과 진동을 더 중요하게 봅니다.',
     directSunlightCorrection: 0,
@@ -209,8 +219,8 @@ export const STRESS_ANIMAL_PROFILES = [
     repeatedExposureCorrection: 1.05,
     noiseCautionDb: 90,
     noiseWarningDb: null,
-    vibrationCautionLevel: 2,
-    vibrationWarningLevel: 5,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '파충류는 종별 차이가 커 소리 자체보다 낮은 대역의 울림과 반복 진동을 중심으로 조심스럽게 해석합니다.',
     directSunlightCorrection: 0,
@@ -245,9 +255,9 @@ export const STRESS_ANIMAL_PROFILES = [
     suddenNoiseCorrection: 1.15,
     repeatedExposureCorrection: 1.1,
     noiseCautionDb: 80,
-    noiseWarningDb: 90,
-    vibrationCautionLevel: 3,
-    vibrationWarningLevel: 6,
+    noiseWarningDb: 85,
+    vibrationCautionLevel: 5,
+    vibrationWarningLevel: 7,
     frequencyGuidance:
       '소형 포유류는 갑작스러운 생활 소음, 높은 대역의 날카로운 소리, 반복 진동을 함께 확인합니다.',
     directSunlightCorrection: 8,
