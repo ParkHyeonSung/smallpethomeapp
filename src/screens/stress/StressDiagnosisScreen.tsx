@@ -25,6 +25,7 @@ import {
   stopAndroidAudioAnalyzer,
 } from '@/src/lib/android-audio-analyzer';
 import {
+  analyzeNoisePattern,
   NoisePatternSample,
   VibrationPatternSample,
 } from '@/src/lib/stress-patterns';
@@ -63,6 +64,16 @@ const MEASUREMENT_OPTIONS = {
 } as const;
 
 const VIBRATION_SAMPLE_INTERVAL_MS = 5;
+// 진동 수준 산출 기준
+// - 가속도 센서 값(g)을 m/s²로 바꾼 뒤, 250ms 구간마다 축별 평균을 빼서 중력과 기울기 성분을 제거한다.
+// - 구간 RMS를 진동가속도 레벨 L_a = 20·log10(a_rms / 1e-6 m/s²) [dB] (ISO 1683 기준값)로 바꾼다.
+// - 80dB(0.01 m/s², 휴대폰 센서 잡음 수준 추정값)를 0단계, 120dB(1 m/s²)를 10단계로 두고 4dB마다 1단계씩 올린다.
+//   1 m/s²는 마우스에서 혈압·심박 변화가 관찰된 진동 크기(Li et al., 2015)를 근거로 한 상한이다.
+const STANDARD_GRAVITY_MS2 = 9.80665;
+const VIBRATION_REFERENCE_MS2 = 1e-6;
+const VIBRATION_FLOOR_DB = 80;
+const VIBRATION_DB_PER_LEVEL = 4;
+const VIBRATION_BLOCK_MS = 250;
 const AI_INTERPRETATION_PENDING_TEXT = 'AI 해석을 생성하는 중입니다.';
 const AI_INTERPRETATION_FAILED_TEXT = 'AI 해석을 생성하지 못했습니다. 그래프와 수치를 참고해 주세요.';
 
@@ -82,8 +93,73 @@ function mapMeteringToDb(metering: number) {
   return Math.round(clamp(metering + 100, 35, 100));
 }
 
-function mapVibrationRmsToLevel(rms: number) {
-  return clamp(Math.round(rms * 42), 0, 10);
+function getVibrationAccelerationDb(rmsMs2: number) {
+  return 20 * Math.log10(Math.max(rmsMs2, VIBRATION_REFERENCE_MS2) / VIBRATION_REFERENCE_MS2);
+}
+
+function mapVibrationRmsToLevel(rmsMs2: number) {
+  const levelDb = getVibrationAccelerationDb(rmsMs2);
+  return clamp(Math.round((levelDb - VIBRATION_FLOOR_DB) / VIBRATION_DB_PER_LEVEL), 0, 10);
+}
+
+function mapVibrationLevelToRms(level: number) {
+  const levelDb = VIBRATION_FLOOR_DB + level * VIBRATION_DB_PER_LEVEL;
+  return VIBRATION_REFERENCE_MS2 * 10 ** (levelDb / 20);
+}
+
+type AccelerationSample = { x: number; y: number; z: number };
+
+const PEAK_WINDOW_MS = 1000;
+
+// 1초 창을 샘플마다 밀면서 창 안의 값을 combine으로 합친 값 가운데 최댓값을 구한다.
+// 평균에 묻히는 짧고 큰 소음·진동(ISO 2631-1의 MTVV와 같은 생각)을 잡기 위해 쓴다.
+function getMaxWindowValue(
+  samples: { timestampMs: number; value: number }[],
+  combine: (values: number[]) => number
+) {
+  const sorted = samples
+    .filter((sample) => Number.isFinite(sample.value))
+    .sort((a, b) => a.timestampMs - b.timestampMs);
+  if (!sorted.length) return null;
+  let maxValue = -Infinity;
+  let start = 0;
+  for (let end = 0; end < sorted.length; end += 1) {
+    while (sorted[end].timestampMs - sorted[start].timestampMs > PEAK_WINDOW_MS) start += 1;
+    const value = combine(sorted.slice(start, end + 1).map((sample) => sample.value));
+    if (value > maxValue) maxValue = value;
+  }
+  return Number.isFinite(maxValue) ? maxValue : null;
+}
+
+// 소음: 1초 동안의 에너지 평균(Leq)의 최댓값 [dB]
+function getPeakOneSecondNoiseDb(samples: NoisePatternSample[]) {
+  return getMaxWindowValue(
+    samples.map((sample) => ({ timestampMs: sample.timestampMs, value: sample.approxDb })),
+    (values) => 10 * Math.log10(values.reduce((sum, db) => sum + 10 ** (db / 10), 0) / values.length)
+  );
+}
+
+// 진동: 1초 동안의 RMS(m/s²)의 최댓값을 진동 단계로 바꾼 값
+function getPeakOneSecondVibrationLevel(samples: VibrationPatternSample[]) {
+  const peakRms = getMaxWindowValue(samples, (values) =>
+    Math.sqrt(values.reduce((sum, rms) => sum + rms * rms, 0) / values.length)
+  );
+  return peakRms === null ? null : mapVibrationRmsToLevel(peakRms);
+}
+
+// 구간 안에서 축별 평균을 빼 중력·기울기 성분을 없앤 뒤, 남은 진동 성분의 평균 제곱(m/s²)²을 구한다.
+function getBlockMeanSquareMs2(block: AccelerationSample[]) {
+  if (!block.length) return null;
+  const meanX = block.reduce((sum, sample) => sum + sample.x, 0) / block.length;
+  const meanY = block.reduce((sum, sample) => sum + sample.y, 0) / block.length;
+  const meanZ = block.reduce((sum, sample) => sum + sample.z, 0) / block.length;
+  const sumSquares = block.reduce((sum, sample) => {
+    const dx = (sample.x - meanX) * STANDARD_GRAVITY_MS2;
+    const dy = (sample.y - meanY) * STANDARD_GRAVITY_MS2;
+    const dz = (sample.z - meanZ) * STANDARD_GRAVITY_MS2;
+    return sum + dx * dx + dy * dy + dz * dz;
+  }, 0);
+  return sumSquares / block.length;
 }
 
 function getAverageValue(values: number[], fallback: number) {
@@ -289,7 +365,7 @@ function buildDebugVibrationSamples(targetLevel: number, durationSec: number): V
     const level = clamp(targetLevel + pulse, 0, 10);
     return {
       timestampMs: Math.round(progress * durationSec * 1000),
-      value: level / 42,
+      value: mapVibrationLevelToRms(level),
     };
   });
 }
@@ -357,6 +433,8 @@ export default function StressDiagnosisScreen() {
   const [species, setSpecies] = useState<string>('마우스·랫');
   const [ambientNoiseDb, setAmbientNoiseDb] = useState('');
   const [vibrationLevel, setVibrationLevel] = useState(0);
+  const [peakNoiseDb, setPeakNoiseDb] = useState<number | null>(null);
+  const [peakVibrationLevel, setPeakVibrationLevel] = useState<number | null>(null);
   const [directSunlight, setDirectSunlight] = useState(false);
 
   const [isMeasuringNoise, setIsMeasuringNoise] = useState(false);
@@ -384,6 +462,8 @@ export default function StressDiagnosisScreen() {
       cageDepthCm: null,
       ambientNoiseDb: ambientNoiseDb ? Number(ambientNoiseDb) : 0,
       vibrationLevel,
+      peakNoiseDb,
+      peakVibrationLevel,
       trafficLevel: 'low',
       hideoutReady: true,
       ventilationReady: true,
@@ -392,7 +472,7 @@ export default function StressDiagnosisScreen() {
       unstableFloor: false,
       measurementMode: measurementType === 'precise' ? 'peak' : 'current',
     }),
-    [ambientNoiseDb, directSunlight, measurementType, species, vibrationLevel]
+    [ambientNoiseDb, directSunlight, measurementType, peakNoiseDb, peakVibrationLevel, species, vibrationLevel]
   );
 
   const report = useMemo(() => buildStressDiagnosisReport(diagnosisInput), [diagnosisInput]);
@@ -570,7 +650,7 @@ export default function StressDiagnosisScreen() {
       timestampMs: sample.timestampMs,
       value: mapVibrationRmsToLevel(sample.value),
     }));
-    const noisePatternSummary = getGraphPatternSummary(currentNoiseSamples, {
+    const noiseGraphSummary = getGraphPatternSummary(currentNoiseSamples, {
       durationSec: selectedOption.durationSec,
       threshold: Math.max(animalGroupInfo.noiseCautionDb, noiseAverageValue + 10),
       average: noiseAverageValue,
@@ -578,6 +658,22 @@ export default function StressDiagnosisScreen() {
       p95: getPercentileValue(currentNoiseSamples.map((sample) => sample.value), 0.95, noiseAverageValue),
       unitLabel: '소음',
     });
+    // 소음 패턴은 FFT 대역 정보까지 쓰는 규칙 기반 분류(stress-patterns.ts)로 판단한다.
+    // 측정 전체 구간을 대상으로 분류하도록 창 길이를 측정 시간으로 둔다.
+    const lastNoiseSample = noisePatternSamplesRef.current[noisePatternSamplesRef.current.length - 1];
+    const noisePatternAnalysis = analyzeNoisePattern(
+      noisePatternSamplesRef.current,
+      lastNoiseSample?.timestampMs ?? Date.now(),
+      selectedOption.durationSec * 1000
+    );
+    const noisePatternSummary =
+      noisePatternAnalysis.kind === 'insufficient'
+        ? noiseGraphSummary
+        : {
+            ...noiseGraphSummary,
+            pattern: noisePatternAnalysis.label,
+            userMeaning: noisePatternAnalysis.detail,
+          };
     const vibrationPatternBase = getGraphPatternSummary(currentVibrationSamplesLevel, {
       durationSec: selectedOption.durationSec,
       threshold: animalGroupInfo.vibrationCautionLevel,
@@ -712,7 +808,7 @@ export default function StressDiagnosisScreen() {
         return { noise: null, vibration: null };
       }
 
-      const samples: number[] = [];
+      const blockMeanSquares: number[] = [];
       const useNativeAudioAnalyzer = isAndroidAudioAnalyzerAvailable();
       // Use a denser sampling interval so short low-amplitude vibrations are less likely
       // to be lost than they were with the previous coarse 100 ms polling.
@@ -750,16 +846,29 @@ export default function StressDiagnosisScreen() {
         audioRecorder.record();
       }
 
+      let currentBlock: AccelerationSample[] = [];
+      let currentBlockStartMs = Date.now();
+      const flushVibrationBlock = (now: number) => {
+        // 샘플이 너무 적은 구간은 평균을 빼면 진동이 거의 0으로 계산되므로 버린다.
+        const meanSquare = currentBlock.length >= 4 ? getBlockMeanSquareMs2(currentBlock) : null;
+        if (meanSquare !== null) {
+          blockMeanSquares.push(meanSquare);
+          vibrationPatternSamplesRef.current = [
+            ...vibrationPatternSamplesRef.current,
+            { timestampMs: now, value: Math.sqrt(meanSquare) },
+          ];
+        }
+        currentBlock = [];
+        currentBlockStartMs = now;
+      };
+
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = Accelerometer.addListener(({ x, y, z }) => {
-        const magnitude = Math.sqrt(x * x + y * y + z * z);
-        const deltaFromGravity = Math.abs(magnitude - 1);
-        samples.push(deltaFromGravity);
         const now = Date.now();
-        vibrationPatternSamplesRef.current = [
-          ...vibrationPatternSamplesRef.current,
-          { timestampMs: now, value: deltaFromGravity },
-        ];
+        currentBlock.push({ x, y, z });
+        if (now - currentBlockStartMs >= VIBRATION_BLOCK_MS) {
+          flushVibrationBlock(now);
+        }
       });
 
       measurementEndAtRef.current = Date.now() + durationMs;
@@ -779,23 +888,37 @@ export default function StressDiagnosisScreen() {
 
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = null;
+      flushVibrationBlock(Date.now());
 
       const metering = latestMeteringRef.current;
       let estimatedDb: number | null = null;
-      if (nativeSnapshot) {
+      // 판정에는 측정 종료 시점의 순간값 대신 측정 구간 전체 소음 샘플의 평균을 사용한다.
+      const measuredNoiseValues = noisePatternSamplesRef.current
+        .map((sample) => sample.approxDb)
+        .filter(Number.isFinite);
+      if (measuredNoiseValues.length > 0) {
+        estimatedDb = Math.round(getAverageValue(measuredNoiseValues, 0));
+        setAmbientNoiseDb(String(estimatedDb));
+      } else if (nativeSnapshot) {
         estimatedDb = mapRmsDbToApproxDisplayDb(nativeSnapshot.rmsDb);
         setAmbientNoiseDb(String(estimatedDb));
-      } else if (metering === null) {
-      } else {
+      } else if (metering !== null) {
         estimatedDb = mapMeteringToDb(metering);
         setAmbientNoiseDb(String(estimatedDb));
       }
 
-      if (!samples.length) {
+      const peakNoise = getPeakOneSecondNoiseDb(noisePatternSamplesRef.current);
+      setPeakNoiseDb(peakNoise === null ? null : Math.round(peakNoise));
+      setPeakVibrationLevel(getPeakOneSecondVibrationLevel(vibrationPatternSamplesRef.current));
+
+      if (!blockMeanSquares.length) {
         return { noise: estimatedDb, vibration: null };
       }
 
-      const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+      // 측정 전체의 진동 RMS(m/s²): 구간별 평균 제곱의 평균에 제곱근을 취한다.
+      const rms = Math.sqrt(
+        blockMeanSquares.reduce((sum, value) => sum + value, 0) / blockMeanSquares.length
+      );
       const level = mapVibrationRmsToLevel(rms);
 
       setVibrationLevel(level);
@@ -831,6 +954,8 @@ export default function StressDiagnosisScreen() {
       setIsRunningMeasurement(true);
       setAmbientNoiseDb('');
       setVibrationLevel(0);
+      setPeakNoiseDb(null);
+      setPeakVibrationLevel(null);
       setAiResult(null);
       setIsAiInterpretationFailed(false);
       setAiErrorMessage(null);
@@ -888,6 +1013,8 @@ export default function StressDiagnosisScreen() {
     setStep('select');
     setAmbientNoiseDb('');
     setVibrationLevel(0);
+    setPeakNoiseDb(null);
+    setPeakVibrationLevel(null);
     setDirectSunlight(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
@@ -922,6 +1049,8 @@ export default function StressDiagnosisScreen() {
     setMeasurementType('quick');
     setAmbientNoiseDb(String(Math.round(targetNoiseDb)));
     setVibrationLevel(targetVibrationLevel);
+    setPeakNoiseDb(null);
+    setPeakVibrationLevel(null);
     setDirectSunlight(false);
     setIsRunningMeasurement(false);
     setRemainingSeconds(0);
