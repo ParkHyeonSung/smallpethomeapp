@@ -137,6 +137,7 @@ export default function StressReportDetailScreen() {
         noise={snapshot.noise}
         frequency={snapshot.frequency}
         vibration={snapshot.vibration}
+        details={getReportDetails(report, snapshot)}
         showEstimateNotice
       />
 
@@ -150,6 +151,21 @@ export default function StressReportDetailScreen() {
       </Pressable>
     </ScreenContainer>
   );
+}
+
+// 이전 기록은 details가 없으므로 저장된 값으로 다시 만든다. 패턴은 저장되지 않아 표시할 수 없다.
+function getReportDetails(report: StressReportItem, snapshot: StressReportResultSnapshot) {
+  if (report.checklist.resultSnapshot?.details?.length) return report.checklist.resultSnapshot.details;
+  const vibrationValues = snapshot.vibration.samples.map((sample) => sample.value);
+  return [
+    { label: '위험 점수', value: `${report.score}점` },
+    { label: '평균 소음', value: `${report.ambient_noise_db} dB` },
+    { label: '최대 소음', value: `${Math.round(snapshot.noise.maxDb)} dB` },
+    { label: '진동 단계(평균)', value: `${report.vibration_level}단계` },
+    { label: '진동 단계(최대)', value: `${Math.round(getMaxValue(vibrationValues, report.vibration_level))}단계` },
+    { label: '소음 패턴', value: '이전 기록이라 저장 안 됨' },
+    { label: '진동 패턴', value: '이전 기록이라 저장 안 됨' },
+  ];
 }
 
 function formatReportDate(value: string) {

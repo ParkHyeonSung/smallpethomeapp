@@ -539,6 +539,15 @@ export default function StressDiagnosisScreen() {
   const displayNoiseInterpretation = aiResult?.noiseInterpretation ?? interpretationFallbackText;
   const displayFrequencyInterpretation = aiResult?.frequencyInterpretation ?? interpretationFallbackText;
   const displayVibrationInterpretation = aiResult?.vibrationInterpretation ?? interpretationFallbackText;
+  const resultDetails = [
+    { label: '위험 점수', value: `${report.score}점` },
+    { label: '평균 소음', value: ambientNoiseDb ? `${ambientNoiseDb} dB` : '측정 안 됨' },
+    { label: '1초 최대 소음', value: peakNoiseDb === null ? '-' : `${peakNoiseDb} dB` },
+    { label: '진동 단계(평균)', value: `${vibrationLevel}단계` },
+    { label: '진동 단계(1초 최대)', value: peakVibrationLevel === null ? '-' : `${peakVibrationLevel}단계` },
+    { label: '소음 패턴', value: patternLabels?.noise ?? '-' },
+    { label: '진동 패턴', value: patternLabels?.vibration ?? '-' },
+  ];
   const resultSnapshot = useMemo<StressReportResultSnapshot>(
     () => ({
       durationSec: selectedOption.durationSec,
@@ -1142,7 +1151,7 @@ export default function StressDiagnosisScreen() {
       await saveStressReport({
         diagnosisInput,
         report,
-        resultSnapshot,
+        resultSnapshot: { ...resultSnapshot, details: resultDetails },
       });
       Alert.alert('저장 완료', '체크 결과가 저장되었어요.');
     } catch (error) {
@@ -1332,15 +1341,7 @@ export default function StressDiagnosisScreen() {
             noise={resultSnapshot.noise}
             frequency={resultSnapshot.frequency}
             vibration={resultSnapshot.vibration}
-            details={[
-              { label: '위험 점수', value: `${report.score}점` },
-              { label: '평균 소음', value: ambientNoiseDb ? `${ambientNoiseDb} dB` : '측정 안 됨' },
-              { label: '1초 최대 소음', value: peakNoiseDb === null ? '-' : `${peakNoiseDb} dB` },
-              { label: '진동 단계(평균)', value: `${vibrationLevel}단계` },
-              { label: '진동 단계(1초 최대)', value: peakVibrationLevel === null ? '-' : `${peakVibrationLevel}단계` },
-              { label: '소음 패턴', value: patternLabels?.noise ?? '-' },
-              { label: '진동 패턴', value: patternLabels?.vibration ?? '-' },
-            ]}
+            details={resultDetails}
             showEstimateNotice
             actions={
               <>

@@ -32,6 +32,7 @@ export type StressReportResultSnapshot = {
     warningValue: number;
     interpretation: string;
   };
+  details?: { label: string; value: string }[];
 };
 
 export type StressReportItem = {
