@@ -428,6 +428,14 @@ export default function StressDiagnosisScreen() {
   const measurementEndAtRef = useRef<number | null>(null);
 
   const [step, setStep] = useState<Step>('select');
+  // 측정이 실패했을 때 원인을 화면에 보여 주기 위한 진단 정보
+  const measurementDiagRef = useRef({
+    error: null as string | null,
+    accelSamples: 0,
+    vibrationBlocks: 0,
+    noiseEvents: 0,
+    nativeAudio: false,
+  });
   const [measurementType, setMeasurementType] = useState<MeasurementType>('quick');
   const [animalCategory, setAnimalCategory] = useState<StressAnimalCategory>('rodent');
   const [species, setSpecies] = useState<string>('마우스·랫');
@@ -796,6 +804,12 @@ export default function StressDiagnosisScreen() {
   };
 
   const measureNoiseAndVibration = async (durationMs: number) => {
+    const diag = measurementDiagRef.current;
+    diag.error = null;
+    diag.accelSamples = 0;
+    diag.vibrationBlocks = 0;
+    diag.noiseEvents = 0;
+    diag.nativeAudio = false;
     latestMeteringRef.current = null;
     setIsMeasuringNoise(true);
     setAiResult(null);
@@ -805,11 +819,13 @@ export default function StressDiagnosisScreen() {
     try {
       const isAvailable = await Accelerometer.isAvailableAsync();
       if (!isAvailable) {
+        diag.error = '가속도 센서를 사용할 수 없음';
         return { noise: null, vibration: null };
       }
 
       const blockMeanSquares: number[] = [];
       const useNativeAudioAnalyzer = isAndroidAudioAnalyzerAvailable();
+      diag.nativeAudio = useNativeAudioAnalyzer;
       // Use a denser sampling interval so short low-amplitude vibrations are less likely
       // to be lost than they were with the previous coarse 100 ms polling.
       Accelerometer.setUpdateInterval(VIBRATION_SAMPLE_INTERVAL_MS);
@@ -818,6 +834,7 @@ export default function StressDiagnosisScreen() {
         audioAnalyzerSubscriptionRef.current?.remove();
         audioAnalyzerSubscriptionRef.current = addAndroidAudioAnalyzerListener((snapshot) => {
           latestAudioSnapshotRef.current = snapshot;
+          diag.noiseEvents += 1;
           const displayDb = mapRmsDbToApproxDisplayDb(snapshot.rmsDb);
           const now = Date.now();
           noisePatternSamplesRef.current = [
@@ -850,9 +867,10 @@ export default function StressDiagnosisScreen() {
       let currentBlockStartMs = Date.now();
       const flushVibrationBlock = (now: number) => {
         // 샘플이 너무 적은 구간은 평균을 빼면 진동이 거의 0으로 계산되므로 버린다.
-        const meanSquare = currentBlock.length >= 4 ? getBlockMeanSquareMs2(currentBlock) : null;
+        const meanSquare = currentBlock.length >= 2 ? getBlockMeanSquareMs2(currentBlock) : null;
         if (meanSquare !== null) {
           blockMeanSquares.push(meanSquare);
+          diag.vibrationBlocks += 1;
           vibrationPatternSamplesRef.current = [
             ...vibrationPatternSamplesRef.current,
             { timestampMs: now, value: Math.sqrt(meanSquare) },
@@ -865,6 +883,7 @@ export default function StressDiagnosisScreen() {
       vibrationSubscriptionRef.current?.remove();
       vibrationSubscriptionRef.current = Accelerometer.addListener(({ x, y, z }) => {
         const now = Date.now();
+        diag.accelSamples += 1;
         currentBlock.push({ x, y, z });
         if (now - currentBlockStartMs >= VIBRATION_BLOCK_MS) {
           flushVibrationBlock(now);
@@ -912,6 +931,7 @@ export default function StressDiagnosisScreen() {
       setPeakVibrationLevel(getPeakOneSecondVibrationLevel(vibrationPatternSamplesRef.current));
 
       if (!blockMeanSquares.length) {
+        diag.error = '진동 구간을 계산하지 못함';
         return { noise: estimatedDb, vibration: null };
       }
 
@@ -923,7 +943,8 @@ export default function StressDiagnosisScreen() {
 
       setVibrationLevel(level);
       return { noise: estimatedDb, vibration: level };
-    } catch {
+    } catch (error) {
+      diag.error = error instanceof Error ? error.message : String(error);
       return { noise: null, vibration: null };
     } finally {
       try {
@@ -983,6 +1004,16 @@ export default function StressDiagnosisScreen() {
       if (result.noise !== null && result.vibration !== null) {
         setStep('checking');
       } else {
+        const diag = measurementDiagRef.current;
+        Alert.alert(
+          '측정 실패',
+          [
+            `원인: ${diag.error ?? '알 수 없음'}`,
+            `소음: ${result.noise ?? '없음'} / 진동: ${result.vibration ?? '없음'}`,
+            `가속도 샘플 ${diag.accelSamples}개, 진동 구간 ${diag.vibrationBlocks}개`,
+            `소음 이벤트 ${diag.noiseEvents}개, 네이티브 분석 ${diag.nativeAudio ? '사용' : '미사용'}`,
+          ].join('\n')
+        );
         setStep('sunlight');
       }
     } finally {
