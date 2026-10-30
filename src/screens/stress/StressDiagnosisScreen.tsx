@@ -1001,19 +1001,28 @@ export default function StressDiagnosisScreen() {
         return;
       }
 
-      if (result.noise !== null && result.vibration !== null) {
-        setStep('checking');
-      } else {
+      if (result.noise === null || result.vibration === null) {
+        // 한쪽만 측정되지 않았으면 결과는 보여 주되, 빠진 값과 원인을 알린다.
         const diag = measurementDiagRef.current;
+        const missing = [result.noise === null ? '소음' : null, result.vibration === null ? '진동' : null]
+          .filter(Boolean)
+          .join('·');
         Alert.alert(
-          '측정 실패',
+          `${missing} 측정 실패`,
           [
+            result.noise === null && result.vibration === null
+              ? '두 값 모두 측정되지 않아 결과를 만들 수 없습니다.'
+              : `${missing} 값은 0으로 계산했으니 결과를 참고만 해 주세요.`,
             `원인: ${diag.error ?? '알 수 없음'}`,
-            `소음: ${result.noise ?? '없음'} / 진동: ${result.vibration ?? '없음'}`,
             `가속도 샘플 ${diag.accelSamples}개, 진동 구간 ${diag.vibrationBlocks}개`,
             `소음 이벤트 ${diag.noiseEvents}개, 네이티브 분석 ${diag.nativeAudio ? '사용' : '미사용'}`,
           ].join('\n')
         );
+      }
+
+      if (result.noise !== null || result.vibration !== null) {
+        setStep('checking');
+      } else {
         setStep('sunlight');
       }
     } finally {
