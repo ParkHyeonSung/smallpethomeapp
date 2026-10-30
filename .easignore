@@ -1,0 +1,49 @@
+# EAS Build 업로드 제외 목록
+# .gitignore와 같지만, 네이티브 소음 분석 모듈이 들어 있는 android 폴더와
+# Supabase 공개 키가 들어 있는 .env는 빌드에 필요하므로 업로드한다.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files (.env는 업로드)
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+app-example
+
+/ios

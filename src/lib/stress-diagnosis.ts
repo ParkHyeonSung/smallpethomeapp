@@ -13,6 +13,9 @@ export type StressDiagnosisInput = {
   cageDepthCm: number | null;
   ambientNoiseDb: number;
   vibrationLevel: number;
+  // 측정 중 1초 평균의 최댓값. 평균에 묻히는 짧고 큰 소음·진동을 판정에 반영하기 위해 쓴다.
+  peakNoiseDb?: number | null;
+  peakVibrationLevel?: number | null;
   trafficLevel: TrafficLevel;
   hideoutReady: boolean;
   ventilationReady: boolean;
@@ -33,6 +36,8 @@ export type StressDiagnosisSignalCode =
   | 'vibration_low'
   | 'vibration_medium'
   | 'vibration_high'
+  | 'noise_peak'
+  | 'vibration_peak'
   | 'direct_sunlight';
 
 export type StressDiagnosisSignal = {
@@ -172,6 +177,21 @@ function getNoiseBand(noiseDb: number, animalGroup: StressAnimalGroupInfo): Nois
   };
 }
 
+// 순간 최대값(1초 평균의 최댓값)이 경고 기준 이상인지 확인한다.
+// 경고 기준이 없는 소음(파충류)은 확인하지 않는다.
+function getPeakFlags(input: StressDiagnosisInput, animalGroup: StressAnimalGroupInfo) {
+  const peakNoiseDb = input.peakNoiseDb;
+  const peakVibrationLevel = input.peakVibrationLevel;
+  return {
+    noise:
+      typeof peakNoiseDb === 'number' &&
+      animalGroup.noiseWarningDb !== null &&
+      peakNoiseDb >= animalGroup.noiseWarningDb,
+    vibration:
+      typeof peakVibrationLevel === 'number' && peakVibrationLevel >= animalGroup.vibrationWarningLevel,
+  };
+}
+
 function buildSignals(input: StressDiagnosisInput) {
   const signals: StressDiagnosisSignal[] = [];
   const strengths: string[] = [];
@@ -207,6 +227,26 @@ function buildSignals(input: StressDiagnosisInput) {
       title: '진동은 안정적임',
       detail: '현재 측정 기준으로는 큰 흔들림이 감지되지 않았습니다.',
     });
+  }
+
+  const peakFlags = getPeakFlags(input, animalGroup);
+  if (peakFlags.noise) {
+    signals.push({
+      code: 'noise_peak',
+      severity: 'caution',
+      title: '순간적으로 큰 소음이 있었음',
+      detail: '평균은 낮더라도 측정 중 1초 동안 경고 기준을 넘는 소음이 감지되었습니다.',
+    });
+    recommendations.push('문 여닫는 소리, 청소기, 알림음처럼 갑자기 커지는 소리가 자주 나는 위치인지 확인해 주세요.');
+  }
+  if (peakFlags.vibration) {
+    signals.push({
+      code: 'vibration_peak',
+      severity: 'caution',
+      title: '순간적으로 큰 진동이 있었음',
+      detail: '평균은 낮더라도 측정 중 1초 동안 경고 기준을 넘는 진동이 감지되었습니다.',
+    });
+    recommendations.push('문이 닫히는 충격이나 세탁기, 발걸음처럼 순간적인 흔들림이 전달되는 위치인지 확인해 주세요.');
   }
 
   if (vibrationLevel >= 10) {
@@ -316,6 +356,19 @@ export function buildStressDiagnosisReport(input: StressDiagnosisInput): StressD
       measurementMode === 'peak'
         ? '피크 시간 기준으로 강한 자극 신호가 감지되어 주의가 필요합니다.'
         : '현재 측정에서 강한 자극 신호가 감지되어 주의가 필요합니다.';
+  }
+
+  // 평균으로는 적합이어도 순간 최대값이 경고 기준을 넘었다면 최소 '주의'로 올린다.
+  const peakFlags = getPeakFlags(input, animalGroup);
+  if (level === 'stable' && (peakFlags.noise || peakFlags.vibration)) {
+    level = 'caution';
+    roundedScore = Math.max(roundedScore, 28);
+    summary =
+      peakFlags.noise && peakFlags.vibration
+        ? '평균은 안정적이지만 측정 중 순간적으로 큰 소음과 진동이 있어 주의가 필요합니다.'
+        : peakFlags.vibration
+          ? '평균은 안정적이지만 측정 중 순간적으로 큰 진동이 있어 주의가 필요합니다.'
+          : '평균은 안정적이지만 측정 중 순간적으로 큰 소음이 있어 주의가 필요합니다.';
   }
 
   const highlights = signals
