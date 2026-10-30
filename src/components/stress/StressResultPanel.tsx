@@ -40,6 +40,8 @@ export type StressResultPanelProps = {
   };
   actions?: ReactNode;
   showEstimateNotice?: boolean;
+  // 점수, 진동 단계, 패턴처럼 판정에 쓰인 세부 수치 (진단 직후 화면에서만 표시)
+  details?: { label: string; value: string }[];
 };
 
 export function downsamplePeakSamples(samples: { timestampMs: number; value: number }[], maxCount: number) {
@@ -325,6 +327,7 @@ export default function StressResultPanel({
   vibration,
   actions,
   showEstimateNotice,
+  details,
 }: StressResultPanelProps) {
   const suitabilityTone = getSuitabilityStatusTone(suitabilityStatus);
 
@@ -338,6 +341,18 @@ export default function StressResultPanel({
         </View>
         <Text style={styles.resultSummaryText}>{summary}</Text>
       </View>
+
+      {details && details.length > 0 ? (
+        <View style={styles.resultSummaryCard}>
+          <Text style={styles.detailTitle}>측정 수치</Text>
+          {details.map((item) => (
+            <View key={item.label} style={styles.detailRow}>
+              <Text style={styles.detailLabel}>{item.label}</Text>
+              <Text style={styles.detailValue}>{item.value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <RiskGraph
         title="소음 변화"
@@ -408,6 +423,27 @@ const styles = StyleSheet.create({
     fontSize: 31,
     lineHeight: 38,
     fontWeight: '900',
+  },
+  detailTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  detailValue: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'right',
   },
   resultSummaryText: {
     fontSize: 14,

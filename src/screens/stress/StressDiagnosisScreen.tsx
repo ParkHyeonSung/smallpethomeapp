@@ -450,6 +450,7 @@ export default function StressDiagnosisScreen() {
   const [isRunningMeasurement, setIsRunningMeasurement] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [aiResult, setAiResult] = useState<StressAiResult | null>(null);
+  const [patternLabels, setPatternLabels] = useState<{ noise: string; vibration: string } | null>(null);
   const [isAiInterpretationFailed, setIsAiInterpretationFailed] = useState(false);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
   const [isDebugResult, setIsDebugResult] = useState(false);
@@ -699,6 +700,7 @@ export default function StressDiagnosisScreen() {
       pattern: vibrationPatternBase.pattern,
       userMeaning: vibrationPatternBase.userMeaning,
     };
+    setPatternLabels({ noise: noisePatternSummary.pattern, vibration: vibrationPatternSummary.pattern });
     const payload = buildStressAiPayload(diagnosisInput, {
       measurementDurationSec: selectedOption.durationSec,
       report,
@@ -1330,6 +1332,15 @@ export default function StressDiagnosisScreen() {
             noise={resultSnapshot.noise}
             frequency={resultSnapshot.frequency}
             vibration={resultSnapshot.vibration}
+            details={[
+              { label: '위험 점수', value: `${report.score}점` },
+              { label: '평균 소음', value: ambientNoiseDb ? `${ambientNoiseDb} dB` : '측정 안 됨' },
+              { label: '1초 최대 소음', value: peakNoiseDb === null ? '-' : `${peakNoiseDb} dB` },
+              { label: '진동 단계(평균)', value: `${vibrationLevel}단계` },
+              { label: '진동 단계(1초 최대)', value: peakVibrationLevel === null ? '-' : `${peakVibrationLevel}단계` },
+              { label: '소음 패턴', value: patternLabels?.noise ?? '-' },
+              { label: '진동 패턴', value: patternLabels?.vibration ?? '-' },
+            ]}
             showEstimateNotice
             actions={
               <>
